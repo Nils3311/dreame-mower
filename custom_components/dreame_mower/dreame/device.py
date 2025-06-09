@@ -5577,14 +5577,12 @@ class DreameMowerDeviceStatus:
     @property
     def lensbrush_life(self) -> int:
         """Returns lensbrush life in percent."""
-        lbleft = self._get_property(DreameMowerProperty.LENSBRUSH_LEFT)
-        if lbleft is not None:
-            return (
-                30000 -
-                self._get_property(DreameMowerProperty.LENSBRUSH_LEFT)[
-                    "CMS"][0]
-            )
-        return 30000
+        response = self._get_property(DreameMowerProperty.LENSBRUSH_LEFT)
+        if response and "CMS" not in response:
+            _LOGGER.warning(
+                "DreameMowerDeviceStatus.lensbrush_life CMS missing in response: %s", response)
+            return 100  # return some fake lensbrush life in percent
+        return 30000 - self._get_property(DreameMowerProperty.LENSBRUSH_LEFT)['CMS'][0]
 
     @property
     def squeegee_life(self) -> int:
