@@ -5581,7 +5581,7 @@ class DreameMowerDeviceStatus:
         if response and "CMS" not in response:
             _LOGGER.warning(
                 "DreameMowerDeviceStatus.lensbrush_life CMS missing in response: %s", response)
-            return 100  # return some fake lensbrush life in percent
+            return 30000  # return some fake lensbrush life
         return 30000 - self._get_property(DreameMowerProperty.LENSBRUSH_LEFT)['CMS'][0]
 
     @property
