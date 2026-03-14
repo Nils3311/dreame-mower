@@ -507,8 +507,9 @@ class DreameMowerDevice:
 
         if skipped:
             _LOGGER.debug("FORK: Skipped properties (not in data yet): %s", skipped)
-        _LOGGER.debug("FORK: Requesting %d properties (ready=%s)", len(property_list), self._ready)
+        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s), first 3: %s", len(property_list), self._ready, property_list[:3])
         results = self._protocol.get_properties(property_list)
+        _LOGGER.warning("FORK DIAG: Got %s results: %s", type(results).__name__ if results else "None", str(results)[:300] if results else "None")
         return self._handle_properties(results)
 
     def _update_status(self, task_status: DreameMowerTaskStatus, status: DreameMowerStatus) -> None:
@@ -1900,6 +1901,14 @@ class DreameMowerDevice:
         # Without this, all properties stay None after startup.
         if not self._ready:
             force_request_properties = True
+            _LOGGER.warning("FORK DIAG: First update - cloud_connected=%s, dreame_cloud=%s, device_connected=%s, protocol.cloud=%s, protocol.cloud.logged_in=%s, protocol.cloud.device_id=%s",
+                self.cloud_connected,
+                self._protocol.dreame_cloud,
+                self.device_connected,
+                self._protocol.cloud is not None,
+                self._protocol.cloud.logged_in if self._protocol.cloud else "N/A",
+                self._protocol.cloud.device_id if self._protocol.cloud else "N/A"
+            )
 
         if not self.cloud_connected:
             self.connect_cloud()
