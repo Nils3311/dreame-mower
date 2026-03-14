@@ -500,7 +500,8 @@ class DreameMowerDevice:
             if prop in self.property_mapping:
                 mapping = self.property_mapping[prop]
                 # Do not include properties that are not exists on the device
-                if "aiid" not in mapping and (not self._ready or prop.value in self.data):
+                # FORK: Also include all properties when data is empty (first connection)
+                if "aiid" not in mapping and (not self._ready or not self.data or prop.value in self.data):
                     property_list.append({"did": str(prop.value), **mapping})
                 else:
                     skipped.append(prop.name)
