@@ -210,13 +210,25 @@ class DreameMowerDevice:
         self.status = DreameMowerDeviceStatus(self)
         self.capability = DreameMowerDeviceCapability(self)
 
-        # Remove write only and response only properties from default list
+        # FORK: Extended default properties for mower
+        # MAP_LIST/RECOVERY_MAP_LIST: critical for map rendering (has_saved_map stays False without these)
+        # TASK_STATUS: needed for mower state tracking
+        # CLEANED_AREA/CLEANING_TIME/CLEANING_PROGRESS: sensor data
+        # BLADES_LEFT/BLADES_TIME_LEFT: consumable tracking
         self._default_properties = [
             DreameMowerProperty.STATE,
             DreameMowerProperty.ERROR,
             DreameMowerProperty.BATTERY_LEVEL,
             DreameMowerProperty.CHARGING_STATUS,
             DreameMowerProperty.STATUS,
+            DreameMowerProperty.TASK_STATUS,
+            DreameMowerProperty.CLEANED_AREA,
+            DreameMowerProperty.CLEANING_TIME,
+            DreameMowerProperty.CLEANING_PROGRESS,
+            DreameMowerProperty.BLADES_LEFT,
+            DreameMowerProperty.BLADES_TIME_LEFT,
+            DreameMowerProperty.MAP_LIST,
+            DreameMowerProperty.RECOVERY_MAP_LIST,
         ]
         self._discarded_properties = [
             DreameMowerProperty.ERROR,
