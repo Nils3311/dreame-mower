@@ -2030,7 +2030,9 @@ class DreameMowerDevice:
                     ]
                 )
 
-        if self._map_manager and not self.status.running and now - self._last_map_list_request > 60:
+        # FORK: Always request MAP_LIST for cloud devices (every 60s)
+        # Original code skipped this while running and never actively fetched for dreame_cloud
+        if self._map_manager and now - self._last_map_list_request > 60:
             properties.extend([DreameMowerProperty.MAP_LIST, DreameMowerProperty.RECOVERY_MAP_LIST])
             self._last_map_list_request = time.time()
 
@@ -2038,7 +2040,10 @@ class DreameMowerDevice:
             if self._protocol.dreame_cloud and (not self.device_connected or not self.cloud_connected):
                 force_request_properties = True
 
-            if not self._protocol.dreame_cloud or force_request_properties:
+            # FORK: For dreame_cloud, also actively request when MAP_LIST is in properties
+            # (original code relied purely on MQTT push which never delivers MAP_LIST)
+            has_map_request = DreameMowerProperty.MAP_LIST in properties
+            if not self._protocol.dreame_cloud or force_request_properties or has_map_request:
                 self._request_properties(properties)
             elif self.status.map_backup_status:
                 self._request_properties([DreameMowerProperty.MAP_BACKUP_STATUS])
