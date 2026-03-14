@@ -57,10 +57,7 @@ NOTIFICATION: Final = {
     "error": "Error",
 }
 
-FAN_SPEED_SILENT: Final = "Silent"
-FAN_SPEED_STANDARD: Final = "Standard"
-FAN_SPEED_STRONG: Final = "Strong"
-FAN_SPEED_TURBO: Final = "Turbo"
+# FORK: CLEAN-01 - vacuum fan speed constants removed
 
 SERVICE_CLEAN_ZONE: Final = "mower_clean_zone"
 SERVICE_CLEAN_SEGMENT: Final = "mower_clean_segment"
@@ -133,24 +130,11 @@ INPUT_OBSTACLE_IGNORED: Final = "obstacle_ignored"
 INPUT_KEY: Final = "key"
 INPUT_VALUE: Final = "value"
 
+# FORK: CLEAN-01 - vacuum consumable constants removed (side brush, filter, tank filter, sensor, silver ion, lensbrush, squeegee)
 CONSUMABLE_BLADES = "blades"
-CONSUMABLE_SIDE_BRUSH = "side_brush"
-CONSUMABLE_FILTER = "filter"
-CONSUMABLE_TANK_FILTER = "tank_filter"
-CONSUMABLE_SENSOR = "sensor"
-CONSUMABLE_SILVER_ION = "silver_ion"
-CONSUMABLE_LENSBRUSH = "lensbrush"
-CONSUMABLE_SQUEEGEE = "squeegee"
 
 NOTIFICATION_ID_CLEANING_PAUSED: Final = "cleaning_paused"
 NOTIFICATION_ID_REPLACE_BLADES: Final = "replace_blades"
-NOTIFICATION_ID_REPLACE_SIDE_BRUSH: Final = "replace_side_brush"
-NOTIFICATION_ID_REPLACE_FILTER: Final = "replace_filter"
-NOTIFICATION_ID_REPLACE_TANK_FILTER: Final = "replace_tank_filter"
-NOTIFICATION_ID_CLEAN_SENSOR: Final = "clean_sensor"
-NOTIFICATION_ID_SILVER_ION: Final = "silver_ion"
-NOTIFICATION_ID_REPLACE_LENSBRUSH: Final = "replace_lensbrush"
-NOTIFICATION_ID_REPLACE_SQUEEGEE: Final = "replace_squeegee"
 NOTIFICATION_ID_CLEANUP_COMPLETED: Final = "cleanup_completed"
 NOTIFICATION_ID_WARNING: Final = "warning"
 NOTIFICATION_ID_ERROR: Final = "error"

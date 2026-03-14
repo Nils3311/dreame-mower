@@ -41,13 +41,6 @@ from .const import (
     NOTIFICATION_2FA_LOGIN,
     NOTIFICATION_ID_CLEANING_PAUSED,
     NOTIFICATION_ID_REPLACE_BLADES,
-    NOTIFICATION_ID_REPLACE_SIDE_BRUSH,
-    NOTIFICATION_ID_REPLACE_FILTER,
-    NOTIFICATION_ID_REPLACE_TANK_FILTER,
-    NOTIFICATION_ID_CLEAN_SENSOR,
-    NOTIFICATION_ID_SILVER_ION,
-    NOTIFICATION_ID_REPLACE_LENSBRUSH,
-    NOTIFICATION_ID_REPLACE_SQUEEGEE,
     NOTIFICATION_ID_CLEANUP_COMPLETED,
     NOTIFICATION_ID_WARNING,
     NOTIFICATION_ID_ERROR,
@@ -62,13 +55,6 @@ from .const import (
     EVENT_INFORMATION,
     EVENT_2FA_LOGIN,
     CONSUMABLE_BLADES,
-    CONSUMABLE_SIDE_BRUSH,
-    CONSUMABLE_FILTER,
-    CONSUMABLE_TANK_FILTER,
-    CONSUMABLE_SENSOR,
-    CONSUMABLE_SILVER_ION,
-    CONSUMABLE_LENSBRUSH,
-    CONSUMABLE_SQUEEGEE,
 )
 
 
@@ -224,41 +210,11 @@ class DreameMowerDataUpdateCoordinator(DataUpdateCoordinator[DreameMowerDevice])
             )
 
     def _check_consumables(self):
+        # FORK: CLEAN-01 - only check blade consumable for mowers
         self._check_consumable(
             CONSUMABLE_BLADES,
             NOTIFICATION_ID_REPLACE_BLADES,
             DreameMowerProperty.BLADES_LEFT,
-        )
-        self._check_consumable(
-            CONSUMABLE_SIDE_BRUSH,
-            NOTIFICATION_ID_REPLACE_SIDE_BRUSH,
-            DreameMowerProperty.SIDE_BRUSH_LEFT,
-        )
-        self._check_consumable(
-            CONSUMABLE_FILTER,
-            NOTIFICATION_ID_REPLACE_FILTER,
-            DreameMowerProperty.FILTER_LEFT,
-        )
-        self._check_consumable(
-            CONSUMABLE_TANK_FILTER,
-            NOTIFICATION_ID_REPLACE_TANK_FILTER,
-            DreameMowerProperty.TANK_FILTER_LEFT,
-        )
-        if not self.device.capability.disable_sensor_cleaning:
-            self._check_consumable(
-                CONSUMABLE_SENSOR,
-                NOTIFICATION_ID_CLEAN_SENSOR,
-                DreameMowerProperty.SENSOR_DIRTY_LEFT,
-            )
-        self._check_consumable(
-            CONSUMABLE_SQUEEGEE,
-            NOTIFICATION_ID_REPLACE_SQUEEGEE,
-            DreameMowerProperty.SQUEEGEE_LEFT,
-        )
-        self._check_consumable(
-            CONSUMABLE_LENSBRUSH,
-            NOTIFICATION_ID_REPLACE_LENSBRUSH,
-            DreameMowerProperty.LENSBRUSH_LEFT,
         )
 
     def _create_persistent_notification(self, content, notification_id) -> None:
