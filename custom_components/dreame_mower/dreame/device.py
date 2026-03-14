@@ -1895,6 +1895,12 @@ class DreameMowerDevice:
         if self._update_running:
             return
 
+        # FORK: Force property request on first update — dreame_cloud devices
+        # rely on MQTT push, but nothing gets pushed until something changes.
+        # Without this, all properties stay None after startup.
+        if not self._ready:
+            force_request_properties = True
+
         if not self.cloud_connected:
             self.connect_cloud()
             self.connect_device()
