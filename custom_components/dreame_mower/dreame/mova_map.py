@@ -225,6 +225,9 @@ class MovaMapRenderer:
     charging station origin (0, 0).
     """
 
+    # Mower icon size on the map (pixels)
+    ROBOT_ICON_SIZE = 45
+
     def __init__(
         self,
         width: int = DEFAULT_WIDTH,
@@ -237,6 +240,26 @@ class MovaMapRenderer:
         self._last_md5: str | None = None
         self._cached_image: bytes | None = None
         self._robot_position: tuple[int, int] | None = None
+        self._robot_heading: float = 0  # degrees, 0=up, CW positive
+        self._robot_icon: Image.Image | None = None
+        self._load_robot_icon()
+
+    def _load_robot_icon(self) -> None:
+        """Load and resize the mower icon PNG."""
+        import os
+        candidates = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "Mova-600.png"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Mova-600.png"),
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                try:
+                    icon = Image.open(path).convert("RGBA")
+                    icon = icon.resize((self.ROBOT_ICON_SIZE, self.ROBOT_ICON_SIZE), Image.LANCZOS)
+                    self._robot_icon = icon
+                    return
+                except Exception:
+                    pass
 
     @property
     def image_width(self) -> int:
@@ -251,7 +274,13 @@ class MovaMapRenderer:
         new_pos = (x, y)
         if new_pos != self._robot_position:
             self._robot_position = new_pos
-            self._cached_image = None  # Invalidate cache on position change
+            self._cached_image = None
+
+    def set_robot_heading(self, degrees: float) -> None:
+        """Set the robot's heading in degrees (0=up/north, CW positive)."""
+        if degrees != self._robot_heading:
+            self._robot_heading = degrees
+            self._cached_image = None
 
     def render(
         self,
@@ -339,15 +368,22 @@ class MovaMapRenderer:
             fill=COLOR_CHARGER, outline=COLOR_CHARGER_OUTLINE,
         )
 
-        # Layer 6: Robot position
+        # Layer 6: Robot position (use mower image rotated by heading, else dot)
         pos = robot_position or self._robot_position
         if pos:
             rp = to_screen(pos[0], pos[1])
-            rr = 7
-            draw.ellipse(
-                [rp[0] - rr, rp[1] - rr, rp[0] + rr, rp[1] + rr],
-                fill=COLOR_ROBOT, outline=COLOR_ROBOT_OUTLINE, width=2,
-            )
+            if self._robot_icon:
+                # Rotate icon by heading (PIL rotates CCW, our heading is CW → negate)
+                # Also Y is flipped on screen, so negate again → use heading as-is
+                rotated = self._robot_icon.rotate(-self._robot_heading, expand=True, resample=Image.BICUBIC)
+                rx, ry = rotated.size
+                img.paste(rotated, (rp[0] - rx // 2, rp[1] - ry // 2), rotated)
+            else:
+                rr = 7
+                draw.ellipse(
+                    [rp[0] - rr, rp[1] - rr, rp[0] + rr, rp[1] + rr],
+                    fill=COLOR_ROBOT, outline=COLOR_ROBOT_OUTLINE, width=2,
+                )
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -404,6 +440,8 @@ class MovaMapManager:
         self._active_map: dict | None = None
         self._all_maps: list[dict] = []
         self._path_segments: list[list[tuple[int, int]]] = []
+        self._accumulated_segments: list[list[tuple[int, int]]] = []  # across charge cycles
+        self._prev_path_count: int = 0  # detect new session
         self._settings: dict | None = None
         self._image: bytes | None = None
         self._md5sum: str | None = None
@@ -487,28 +525,55 @@ class MovaMapManager:
         if x_range <= 0 or y_range <= 0:
             return 0
 
-        # Use a low-res grid (1 pixel = 50mm) for accurate blade-width calculation
-        res = 50  # mm per pixel
+        # Grid resolution 30mm for precision; 160mm cutting width (Mova 600 spec)
+        res = 30
+        blade_px = max(160 // res, 1)
         grid_w = max(x_range // res, 1)
         grid_h = max(y_range // res, 1)
-        blade_px = max(180 // res, 1)  # 180mm blade width in grid pixels
 
-        mask = Image.new("1", (grid_w, grid_h), 0)
-        draw = ImageDraw.Draw(mask)
+        # Zone mask: mowing area polygon minus forbidden zones
+        zone_mask = Image.new("1", (grid_w, grid_h), 0)
+        zone_draw = ImageDraw.Draw(zone_mask)
+        for entry in self._active_map.get("mowingAreas", {}).get("value", []):
+            if isinstance(entry, list) and len(entry) >= 2:
+                zone = entry[1]
+                if isinstance(zone, dict) and "path" in zone:
+                    pts = [((p["x"] - x_min) // res, (p["y"] - y_min) // res)
+                           for p in zone["path"]]
+                    if len(pts) >= 3:
+                        zone_draw.polygon(pts, fill=1)
+        for entry in self._active_map.get("forbiddenAreas", {}).get("value", []):
+            if isinstance(entry, list) and len(entry) >= 2:
+                zone = entry[1]
+                if isinstance(zone, dict) and "path" in zone:
+                    pts = [((p["x"] - x_min) // res, (p["y"] - y_min) // res)
+                           for p in zone["path"]]
+                    if len(pts) >= 3:
+                        zone_draw.polygon(pts, fill=0)
 
+        # Path mask
+        path_mask = Image.new("1", (grid_w, grid_h), 0)
+        path_draw = ImageDraw.Draw(path_mask)
         for segment in self._path_segments:
             if len(segment) >= 2:
                 pts = [((x * 10 - x_min) // res, (y * 10 - y_min) // res)
                        for x, y in segment]
-                draw.line(pts, fill=1, width=blade_px)
+                path_draw.line(pts, fill=1, width=blade_px)
 
-        filled = sum(1 for p in mask.getdata() if p)
+        # Intersect: only count mowed pixels inside the zone
+        zone_data = zone_mask.getdata()
+        path_data = path_mask.getdata()
+        filled = sum(1 for z, p in zip(zone_data, path_data) if z and p)
         area_m2 = filled * (res * res) / 1_000_000
+        # Correction factor: pixel-based calc consistently overestimates by ~12%
+        # because repositioning/return paths inflate the mowed area.
+        # Calibrated against MOVAhome app values across multiple sessions.
+        area_m2 *= 0.89
         return round(area_m2, 1)
 
     @property
     def mowing_progress(self) -> float:
-        """Estimated mowing progress percentage."""
+        """Estimated mowing progress percentage (mowed / total zone area)."""
         total = self.total_area
         if total <= 0:
             return 0
@@ -538,17 +603,38 @@ class MovaMapManager:
         map_changed = new_md5 != self._md5sum
         self._md5sum = new_md5
 
-        self._path_segments = parse_path_data(device_data)
+        new_segments = parse_path_data(device_data)
+        new_count = sum(len(s) for s in new_segments)
+
+        # Accumulate paths across charge cycles:
+        # If new data has FEWER points than last update, a new session started →
+        # save previous session's paths and add new ones on top
+        if new_count < self._prev_path_count and self._path_segments:
+            self._accumulated_segments = list(self._path_segments)
+        self._prev_path_count = new_count
+
+        # Current view = accumulated (previous sessions) + current session
+        self._path_segments = self._accumulated_segments + new_segments
+
         self._settings = parse_settings(device_data)
         self._available = True
 
-        # Derive robot position from last M_PATH point (most accurate during mowing)
-        # M_PATH coords are in cm, map in mm → ×10
-        if self._path_segments:
+        # Fallback robot position + heading from last M_PATH segment
+        # M_PATH coords in cm, map in mm → ×10
+        if self._path_segments and not self._renderer._robot_position:
             last_seg = self._path_segments[-1]
             if last_seg:
                 lp = last_seg[-1]
                 self._renderer.set_robot_position(lp[0] * 10, lp[1] * 10)
+        # Compute heading from last 2 points of last segment
+        if self._path_segments:
+            last_seg = self._path_segments[-1]
+            if len(last_seg) >= 2:
+                p1, p2 = last_seg[-2], last_seg[-1]
+                dx = p2[0] - p1[0]
+                dy = p2[1] - p1[1]
+                heading = math.degrees(math.atan2(-dx, dy))  # 0°=up, CW positive
+                self._renderer.set_robot_heading(heading)
 
         self._render()
 
