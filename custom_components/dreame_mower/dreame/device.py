@@ -372,6 +372,9 @@ class DreameMowerDevice:
     def _handle_properties(self, properties) -> bool:
         changed = False
         callbacks = []
+        if not properties:
+            _LOGGER.debug("FORK: _handle_properties called with empty/None properties")
+            return False
         for prop in properties:
             if not isinstance(prop, dict):
                 continue
