@@ -201,8 +201,12 @@ class DreameMapMowerMapManager:
         self._capability: DreameMowerDeviceCapability = None
 
     def _request_map_from_cloud(self) -> bool:
-        if self._protocol.cloud.dreame_cloud:
-            return True
+        # FORK: Don't skip cloud map request for dreame_cloud devices.
+        # The original code returned True immediately for dreame_cloud,
+        # expecting MAP_DATA via MQTT push. But Mova 600 Plus doesn't
+        # push MAP_DATA over MQTT — we need to actively fetch it.
+        # if self._protocol.cloud.dreame_cloud:
+        #     return True
 
         if self._current_timestamp_ms is not None:
             start_time = self._current_timestamp_ms
