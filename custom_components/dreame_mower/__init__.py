@@ -10,6 +10,9 @@ from pathlib import Path
 from .const import DOMAIN
 from .coordinator import DreameMowerDataUpdateCoordinator
 
+# FORK: Phase 1 pairing - enable debug logging via HA logger service
+# Run: ha service logger.set_level --data '{"custom_components.dreame_mower": "debug", "custom_components.dreame_mower.dreame": "debug"}'
+
 PLATFORMS = (
     Platform.LAWN_MOWER,
     Platform.SENSOR,
