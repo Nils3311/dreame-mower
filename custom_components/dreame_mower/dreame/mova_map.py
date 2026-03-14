@@ -25,7 +25,7 @@ COLOR_MOWING_AREA = (100, 180, 100, 255)
 COLOR_MOWING_AREA_OUTLINE = (120, 200, 120, 255)
 COLOR_FORBIDDEN_ZONE = (200, 60, 60, 180)
 COLOR_FORBIDDEN_ZONE_OUTLINE = (255, 80, 80, 255)
-COLOR_PATH = (255, 255, 100, 120)
+COLOR_PATH = (255, 255, 100, 180)
 COLOR_CHARGER = (0, 150, 255, 255)
 COLOR_CHARGER_OUTLINE = (255, 255, 255, 255)
 COLOR_ROBOT = (255, 200, 0, 255)
@@ -109,17 +109,49 @@ def parse_path_data(raw_data: dict) -> list[list[tuple[int, int]]]:
     Each segment is a list of (x, y) coordinate tuples.
     Segments are separated by the pen-up marker [32767, -32768].
 
-    Gotcha 14: M_PATH may be empty (just "[]" with info=2).
+    Gotcha: M_PATH.info may be unreliable (set to 2 = "[]" even when
+    M_PATH.1-15 contain real data). We try parse_chunked_data first,
+    then fall back to extracting coordinates from all chunks via regex.
     """
     path_str = parse_chunked_data(raw_data, "M_PATH")
-    if not path_str or len(path_str) <= 2:
-        return []
 
-    try:
-        path_data = json.loads(f"[{path_str}]")
-    except json.JSONDecodeError as e:
-        _LOGGER.error("Failed to parse M_PATH JSON: %s", e)
-        return []
+    path_data = None
+    if path_str and len(path_str) > 2:
+        try:
+            path_data = json.loads(f"[{path_str}]")
+        except json.JSONDecodeError:
+            pass
+
+    # Fallback: M_PATH.info is unreliable — extract [x,y] pairs from all chunks
+    if not path_data:
+        import re
+        all_chunks = []
+        for key, val in raw_data.items():
+            if key.startswith("M_PATH.") and key != "M_PATH.info":
+                all_chunks.append((key, str(val)))
+
+        if not all_chunks:
+            return []
+
+        # Sort by chunk index and combine
+        def chunk_index(item):
+            try:
+                return int(item[0].split(".")[1])
+            except (ValueError, IndexError):
+                return 999
+        all_chunks.sort(key=chunk_index)
+        combined = "".join(v for _, v in all_chunks)
+
+        # Extract all [x,y] coordinate pairs via regex
+        pairs = re.findall(r'\[(-?\d+),\s*(-?\d+)\]', combined)
+        if not pairs:
+            return []
+
+        # Convert to flat list for the standard parser below
+        path_data = []
+        for x_str, y_str in pairs:
+            path_data.append([int(x_str), int(y_str)])
+        _LOGGER.debug("M_PATH fallback: extracted %d coordinate pairs from chunks", len(path_data))
 
     segments = []
     current_segment: list[tuple[int, int]] = []
@@ -206,7 +238,10 @@ class MovaMapRenderer:
 
     def set_robot_position(self, x: int, y: int) -> None:
         """Set the robot's current position in map coordinates (mm)."""
-        self._robot_position = (x, y)
+        new_pos = (x, y)
+        if new_pos != self._robot_position:
+            self._robot_position = new_pos
+            self._cached_image = None  # Invalidate cache on position change
 
     def render(
         self,
@@ -225,9 +260,8 @@ class MovaMapRenderer:
             PNG image as bytes
         """
         md5 = map_data.get("md5sum", "")
-        has_paths = bool(path_segments)
 
-        if md5 and md5 == self._last_md5 and self._cached_image and not has_paths:
+        if md5 and md5 == self._last_md5 and self._cached_image:
             return self._cached_image
 
         boundary = map_data.get("boundary")
@@ -278,15 +312,16 @@ class MovaMapRenderer:
                          COLOR_FORBIDDEN_ZONE, COLOR_FORBIDDEN_ZONE_OUTLINE)
 
         # Layer 4: Mowing paths
+        # M_PATH coordinates are in centimeters, map is in millimeters → scale by 10
         if path_segments:
             for segment in path_segments:
                 if len(segment) >= 2:
-                    screen_points = [to_screen(x, y) for x, y in segment]
-                    draw.line(screen_points, fill=COLOR_PATH, width=1)
+                    screen_points = [to_screen(x * 10, y * 10) for x, y in segment]
+                    draw.line(screen_points, fill=COLOR_PATH, width=2)
 
         # Layer 5: Charging station at origin (0, 0)
         station = to_screen(0, 0)
-        r = 6
+        r = 8
         draw.ellipse(
             [station[0] - r, station[1] - r, station[0] + r, station[1] + r],
             fill=COLOR_CHARGER, outline=COLOR_CHARGER_OUTLINE,
@@ -296,10 +331,10 @@ class MovaMapRenderer:
         pos = robot_position or self._robot_position
         if pos:
             rp = to_screen(pos[0], pos[1])
-            rr = 5
+            rr = 7
             draw.ellipse(
                 [rp[0] - rr, rp[1] - rr, rp[0] + rr, rp[1] + rr],
-                fill=COLOR_ROBOT, outline=COLOR_ROBOT_OUTLINE,
+                fill=COLOR_ROBOT, outline=COLOR_ROBOT_OUTLINE, width=2,
             )
 
         buf = io.BytesIO()
