@@ -1,6 +1,5 @@
 from __future__ import annotations
 import logging
-import struct
 import time
 import json
 import re
@@ -1960,35 +1959,6 @@ class DreameMowerDevice:
         except Exception as ex:
             _LOGGER.error("Mova map fetch failed: %s", ex)
 
-    def _update_mova_robot_position(self) -> None:
-        """Fetch SIID 1.4 telemetry and update robot position on map.
-
-        Telemetry is a 33-byte frame: 0xCE [31 bytes] 0xCE
-        Position: signed LE int16 at bytes 1-2 (X) and 3-4 (Y), in mm.
-        """
-        if not self._mova_map_manager or not self._mova_map_manager.available:
-            return
-        try:
-            result = self._protocol.cloud.get_properties("1.4")
-            if not result:
-                return
-            for p in result:
-                if p.get("key") == "1.4" and "value" in p:
-                    raw = p["value"]
-                    if isinstance(raw, str) and raw.startswith("["):
-                        byte_list = json.loads(raw)
-                    elif isinstance(raw, list):
-                        byte_list = raw
-                    else:
-                        continue
-                    if len(byte_list) >= 5 and byte_list[0] == 0xCE:
-                        b = bytes(byte_list)
-                        x = struct.unpack_from('<h', b, 1)[0]
-                        y = struct.unpack_from('<h', b, 3)[0]
-                        self._mova_map_manager.set_robot_position(x, y)
-        except Exception:
-            pass  # Non-critical — don't log every cycle
-
     @property
     def mova_map_image(self) -> bytes | None:
         """Get the current Mova map PNG image."""
@@ -2098,12 +2068,11 @@ class DreameMowerDevice:
                     ]
                 )
 
-        # Mova: refresh map + position periodically
+        # Mova: refresh map + paths periodically (robot position derived from last M_PATH point)
         if self._is_mova and self._mova_map_manager and self._ready:
             mova_interval = 60 if self.status.active else self._mova_map_refresh_interval
             if now - self._last_mova_map_update > mova_interval:
                 self._fetch_mova_map()
-            self._update_mova_robot_position()
 
         # Always request MAP_LIST for cloud devices (every 60s)
         # Original code skipped this while running and never actively fetched for dreame_cloud

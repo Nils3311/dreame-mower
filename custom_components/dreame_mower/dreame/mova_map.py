@@ -119,9 +119,18 @@ def parse_path_data(raw_data: dict) -> list[list[tuple[int, int]]]:
     path_data = None
     if path_str and len(path_str) > 2:
         try:
-            path_data = json.loads(f"[{path_str}]")
+            # Try direct parse first (valid when M_PATH.info is correct)
+            parsed = json.loads(path_str)
+            if isinstance(parsed, list):
+                path_data = parsed
         except json.JSONDecodeError:
             pass
+        if path_data is None:
+            try:
+                # Fallback: wrap fragments in array brackets
+                path_data = json.loads(f"[{path_str}]")
+            except json.JSONDecodeError:
+                pass
 
     # Fallback: M_PATH.info is unreliable — extract [x,y] pairs from all chunks
     if not path_data:
@@ -532,6 +541,14 @@ class MovaMapManager:
         self._path_segments = parse_path_data(device_data)
         self._settings = parse_settings(device_data)
         self._available = True
+
+        # Derive robot position from last M_PATH point (most accurate during mowing)
+        # M_PATH coords are in cm, map in mm → ×10
+        if self._path_segments:
+            last_seg = self._path_segments[-1]
+            if last_seg:
+                lp = last_seg[-1]
+                self._renderer.set_robot_position(lp[0] * 10, lp[1] * 10)
 
         self._render()
 
