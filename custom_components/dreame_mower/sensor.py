@@ -65,7 +65,7 @@ SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
         icon="mdi:map-clock",
         native_unit_of_measurement=UNIT_MINUTES,
         available_fn=lambda device: device.status.fast_mapping,
-        exists_fn=lambda description, device: device.capability.lidar_navigation,
+        exists_fn=lambda description, device: not device._is_mova and device.capability.lidar_navigation,
     ),
     DreameMowerSensorEntityDescription(
         property_key=DreameMowerProperty.CLEANED_AREA,
@@ -79,6 +79,7 @@ SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
     DreameMowerSensorEntityDescription(
         property_key=DreameMowerProperty.STATUS,
         icon="mdi:mower",
+        exists_fn=lambda description, device: not device._is_mova,
     ),
     DreameMowerSensorEntityDescription(
         property_key=DreameMowerProperty.RELOCATION_STATUS,
@@ -196,6 +197,43 @@ SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
         icon="mdi:chip",
         value_fn=lambda value, device: device.info.version,
         entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Mova-specific sensors
+    DreameMowerSensorEntityDescription(
+        key="mova_total_area",
+        name="Total Area",
+        icon="mdi:texture-box",
+        native_unit_of_measurement=UNIT_AREA,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda value, device: device._mova_map_manager.total_area if device._mova_map_manager else None,
+        exists_fn=lambda description, device: device._is_mova and device._mova_map_manager is not None,
+    ),
+    DreameMowerSensorEntityDescription(
+        key="mova_mowed_area",
+        name="Mowed Area",
+        icon="mdi:grass",
+        native_unit_of_measurement=UNIT_AREA,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda value, device: device._mova_map_manager.mowed_area if device._mova_map_manager else None,
+        exists_fn=lambda description, device: device._is_mova and device._mova_map_manager is not None,
+    ),
+    DreameMowerSensorEntityDescription(
+        key="mova_mowing_progress",
+        name="Mowing Progress",
+        icon="mdi:percent-circle",
+        native_unit_of_measurement=UNIT_PERCENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda value, device: device._mova_map_manager.mowing_progress if device._mova_map_manager else None,
+        exists_fn=lambda description, device: device._is_mova and device._mova_map_manager is not None,
+    ),
+    DreameMowerSensorEntityDescription(
+        key="mova_mowing_time",
+        name="Mowing Time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement=UNIT_MINUTES,
+        device_class=SensorDeviceClass.DURATION,
+        value_fn=lambda value, device: round(device._mova_map_manager.zone_mowing_time / 60) if device._mova_map_manager else None,
+        exists_fn=lambda description, device: device._is_mova and device._mova_map_manager is not None,
     ),
 )
 

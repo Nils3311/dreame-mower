@@ -11,6 +11,7 @@ The map format uses vector polygons (not raster pixels like Dreame Vacuum).
 import io
 import json
 import logging
+import math
 from typing import Any
 
 from PIL import Image, ImageDraw
@@ -25,7 +26,7 @@ COLOR_MOWING_AREA = (100, 180, 100, 255)
 COLOR_MOWING_AREA_OUTLINE = (120, 200, 120, 255)
 COLOR_FORBIDDEN_ZONE = (200, 60, 60, 180)
 COLOR_FORBIDDEN_ZONE_OUTLINE = (255, 80, 80, 255)
-COLOR_PATH = (255, 255, 100, 180)
+COLOR_PATH = (144, 238, 144, 140)  # Light green semi-transparent (like app's mowed area)
 COLOR_CHARGER = (0, 150, 255, 255)
 COLOR_CHARGER_OUTLINE = (255, 255, 255, 255)
 COLOR_ROBOT = (255, 200, 0, 255)
@@ -311,13 +312,15 @@ class MovaMapRenderer:
         self._draw_areas(draw, map_data.get("forbiddenAreas", {}), to_screen,
                          COLOR_FORBIDDEN_ZONE, COLOR_FORBIDDEN_ZONE_OUTLINE)
 
-        # Layer 4: Mowing paths
+        # Layer 4: Mowing paths (filled mowed area)
         # M_PATH coordinates are in centimeters, map is in millimeters → scale by 10
+        # Blade width ~180mm → calculate pixel width from scale
         if path_segments:
+            blade_px = max(int(180 * scale), 2)  # 180mm blade width in pixels
             for segment in path_segments:
                 if len(segment) >= 2:
                     screen_points = [to_screen(x * 10, y * 10) for x, y in segment]
-                    draw.line(screen_points, fill=COLOR_PATH, width=2)
+                    draw.line(screen_points, fill=COLOR_PATH, width=blade_px)
 
         # Layer 5: Charging station at origin (0, 0)
         station = to_screen(0, 0)
@@ -420,6 +423,87 @@ class MovaMapManager:
     @property
     def md5sum(self) -> str | None:
         return self._md5sum
+
+    @property
+    def total_area(self) -> float:
+        """Total mowing zone area in m²."""
+        if self._active_map:
+            areas = self._active_map.get("mowingAreas", {}).get("value", [])
+            if areas and isinstance(areas[0], list) and len(areas[0]) >= 2:
+                zone = areas[0][1]
+                if isinstance(zone, dict):
+                    return zone.get("area", 0)
+        return 0
+
+    @property
+    def zone_mowing_time(self) -> int:
+        """Total mowing time for the zone in seconds."""
+        if self._active_map:
+            areas = self._active_map.get("mowingAreas", {}).get("value", [])
+            if areas and isinstance(areas[0], list) and len(areas[0]) >= 2:
+                zone = areas[0][1]
+                if isinstance(zone, dict):
+                    return zone.get("time", 0)
+        return 0
+
+    @property
+    def zone_effective_time(self) -> int:
+        """Effective mowing time for the zone in seconds."""
+        if self._active_map:
+            areas = self._active_map.get("mowingAreas", {}).get("value", [])
+            if areas and isinstance(areas[0], list) and len(areas[0]) >= 2:
+                zone = areas[0][1]
+                if isinstance(zone, dict):
+                    return zone.get("etime", 0)
+        return 0
+
+    @property
+    def mowed_area(self) -> float:
+        """Estimated mowed area in m² using pixel-based coverage.
+
+        Renders paths onto a low-res mask image and counts filled pixels.
+        This correctly handles overlap (same area mowed twice = counted once).
+        M_PATH coordinates in cm, map in mm → scale by 10.
+        """
+        if not self._path_segments or not self._active_map:
+            return 0
+        boundary = self._active_map.get("boundary")
+        if not boundary:
+            return 0
+
+        x_min, y_min = boundary["x1"], boundary["y1"]
+        x_max, y_max = boundary["x2"], boundary["y2"]
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+        if x_range <= 0 or y_range <= 0:
+            return 0
+
+        # Use a low-res grid (1 pixel = 50mm) for accurate blade-width calculation
+        res = 50  # mm per pixel
+        grid_w = max(x_range // res, 1)
+        grid_h = max(y_range // res, 1)
+        blade_px = max(180 // res, 1)  # 180mm blade width in grid pixels
+
+        mask = Image.new("1", (grid_w, grid_h), 0)
+        draw = ImageDraw.Draw(mask)
+
+        for segment in self._path_segments:
+            if len(segment) >= 2:
+                pts = [((x * 10 - x_min) // res, (y * 10 - y_min) // res)
+                       for x, y in segment]
+                draw.line(pts, fill=1, width=blade_px)
+
+        filled = sum(1 for p in mask.getdata() if p)
+        area_m2 = filled * (res * res) / 1_000_000
+        return round(area_m2, 1)
+
+    @property
+    def mowing_progress(self) -> float:
+        """Estimated mowing progress percentage."""
+        total = self.total_area
+        if total <= 0:
+            return 0
+        return round(min(self.mowed_area / total * 100, 100), 1)
 
     def update(self, device_data: dict) -> bool:
         """Update map data from getDeviceData response.

@@ -311,6 +311,13 @@ class DreameMowerDevice:
         self._last_mova_map_update: float = 0
         self._mova_map_refresh_interval: float = 300  # 5 minutes
 
+        # Mova property mapping overrides: Mova sends STATUS at 4.4 and TASK_STATUS at 4.1
+        # (default mapping has STATUS=4.1, TASK_STATUS=4.7 which is wrong for Mova)
+        if self._is_mova:
+            self.property_mapping = dict(self.property_mapping)  # copy class-level dict
+            self.property_mapping[DreameMowerProperty.STATUS] = {"siid": 4, "piid": 4}
+            self.property_mapping[DreameMowerProperty.TASK_STATUS] = {"siid": 4, "piid": 1}
+
         if self._protocol.cloud:
             if self._is_mova:
                 # Mova uses vector polygon maps from iotuserdata/getDeviceData
