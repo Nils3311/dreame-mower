@@ -35,6 +35,7 @@ class DreameMowerButtonEntityDescription(DreameMowerEntityDescription, ButtonEnt
     action_fn: Callable[[object]] = None
 
 
+# FORK: CLEAN-01 - vacuum-only reset button descriptions removed
 BUTTONS: tuple[ButtonEntityDescription, ...] = (
     DreameMowerButtonEntityDescription(
         action_key=DreameMowerAction.RESET_BLADES,
@@ -43,54 +44,6 @@ BUTTONS: tuple[ButtonEntityDescription, ...] = (
         exists_fn=lambda description, device: bool(
             DreameMowerEntityDescription().exists_fn(description, device)
             and device.status.blades_life is not None
-        ),
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_SIDE_BRUSH,
-        icon="mdi:pinwheel-outline",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device)
-            and device.status.side_brush_life is not None
-        ),
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_FILTER,
-        icon="mdi:air-filter",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device) and device.status.filter_life is not None
-        ),
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_SENSOR,
-        icon="mdi:radar",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: not device.capability.disable_sensor_cleaning,
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_SILVER_ION,
-        icon="mdi:shimmer",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device)
-            and device.status.silver_ion_life is not None
-        ),
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_LENSBRUSH,
-        icon="mdi:brush",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device) and device.capability.lensbrush
-        ),
-    ),
-    DreameMowerButtonEntityDescription(
-        action_key=DreameMowerAction.RESET_SQUEEGEE,
-        icon="mdi:squeegee",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device) and device.status.squeegee_life is not None
         ),
     ),
     DreameMowerButtonEntityDescription(

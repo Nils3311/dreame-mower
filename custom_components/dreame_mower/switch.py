@@ -25,7 +25,6 @@ from .entity import DreameMowerEntity, DreameMowerEntityDescription
 from .dreame import (
     DreameMowerProperty,
     DreameMowerAutoSwitchProperty,
-    DreameMowerStrAIProperty,
     DreameMowerAIProperty,
 )
 
@@ -37,6 +36,7 @@ class DreameMowerSwitchEntityDescription(DreameMowerEntityDescription, SwitchEnt
     set_fn: Callable[[object, int]] = None
 
 
+# FORK: CLEAN-01 - vacuum/camera-only switch descriptions removed
 SWITCHES: tuple[DreameMowerSwitchEntityDescription, ...] = (
     DreameMowerSwitchEntityDescription(
         property_key=DreameMowerProperty.RESUME_CLEANING,
@@ -114,48 +114,6 @@ SWITCHES: tuple[DreameMowerSwitchEntityDescription, ...] = (
         entity_category=EntityCategory.CONFIG,
     ),
     DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.AI_OBSTACLE_IMAGE_UPLOAD,
-        icon="mdi:cloud-upload",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.AI_OBSTACLE_PICTURE,
-        icon_fn=lambda value, device: "mdi:camera-off" if not value else "mdi:camera",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.AI_PET_DETECTION,
-        icon_fn=lambda value, device: "mdi:dog-side-off" if not value else "mdi:dog-side",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerStrAIProperty.AI_HUMAN_DETECTION,
-        icon_fn=lambda value, device: "mdi:account-off" if not value else "mdi:account",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.FUZZY_OBSTACLE_DETECTION,
-        icon="mdi:blur-linear",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.AI_PET_AVOIDANCE,
-        icon="mdi:dog-service",
-        exists_fn=lambda description, device: device.capability.pet_detective,
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.PET_PICTURE,
-        icon="mdi:cat",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAIProperty.PET_FOCUSED_DETECTION,
-        icon="mdi:dog",
-        exists_fn=lambda description, device: device.capability.pet_furniture,
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
         property_key=DreameMowerAutoSwitchProperty.FILL_LIGHT,
         icon_fn=lambda value, device: "mdi:lightbulb-off" if not value else "mdi:lightbulb-on",
         exists_fn=lambda description, device: bool(
@@ -166,32 +124,6 @@ SWITCHES: tuple[DreameMowerSwitchEntityDescription, ...] = (
     DreameMowerSwitchEntityDescription(
         property_key=DreameMowerAutoSwitchProperty.COLLISION_AVOIDANCE,
         icon_fn=lambda value, device: "mdi:sign-direction-remove" if not value else "mdi:sign-direction",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAutoSwitchProperty.STAIN_AVOIDANCE,
-        icon="mdi:liquid-spot",
-        format_fn=lambda value, device: 2 if value else 1,
-        exists_fn=lambda description, device: bool(
-            device.capability.fluid_detection and DreameMowerEntityDescription().exists_fn(description, device)
-        ),
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAutoSwitchProperty.FLOOR_DIRECTION_CLEANING,
-        exists_fn=lambda description, device: bool(
-            device.capability.floor_direction_cleaning
-            and DreameMowerEntityDescription().exists_fn(description, device)
-        ),
-        icon="mdi:arrow-decision-auto",
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAutoSwitchProperty.PET_FOCUSED_CLEANING,
-        exists_fn=lambda description, device: bool(
-            device.capability.pet_detective and DreameMowerEntityDescription().exists_fn(description, device)
-        ),
-        icon="mdi:paw",
         entity_category=EntityCategory.CONFIG,
     ),
     DreameMowerSwitchEntityDescription(
@@ -221,23 +153,6 @@ SWITCHES: tuple[DreameMowerSwitchEntityDescription, ...] = (
         exists_fn=lambda description, device: bool(
             DreameMowerEntityDescription().exists_fn(description, device)
         ),
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        property_key=DreameMowerAutoSwitchProperty.STREAMING_VOICE_PROMPT,
-        icon_fn=lambda value, device: "mdi:account-tie-voice-off" if not value else "mdi:account-tie-voice",
-        exists_fn=lambda description, device: bool(
-            device.capability.camera_streaming and DreameMowerEntityDescription().exists_fn(description, device)
-        ),
-        entity_category=EntityCategory.CONFIG,
-    ),
-    DreameMowerSwitchEntityDescription(
-        key="camera_light_brightness_auto",
-        icon_fn=lambda value, device: "mdi:brightness-percent" if not value else "mdi:brightness-auto",
-        value_fn=lambda value, device: bool(device.status.camera_light_brightness == 101),
-        exists_fn=lambda description, device: device.capability.camera_streaming
-        and device.capability.fill_light,  # and DreameMowerEntityDescription().exists_fn(description, device),
-        format_fn=lambda value, device: 101 if value else 40,
         entity_category=EntityCategory.CONFIG,
     ),
 )

@@ -50,29 +50,14 @@ from .dreame import (
     DreameMowerSecondCleaning,
     DreameMowerCleaningRoute,
     DreameMowerCleanGenius,
-    DreameMowerFloorMaterial,
-    DreameMowerFloorMaterialDirection,
     DreameMowerSegmentVisibility,
     CLEANING_MODE_CODE_TO_NAME,
-    FLOOR_MATERIAL_CODE_TO_NAME,
-    FLOOR_MATERIAL_DIRECTION_CODE_TO_NAME,
     SEGMENT_VISIBILITY_CODE_TO_NAME,
     CLEANING_ROUTE_TO_NAME,
 )
 
 CLEANING_MODE_TO_ICON = {
     DreameMowerCleaningMode.MOWING: "mdi:broom",
-}
-
-FLOOR_MATERIAL_TO_ICON = {
-    DreameMowerFloorMaterial.NONE: "mdi:checkbox-blank",
-    DreameMowerFloorMaterial.TILE: "mdi:apps",
-    DreameMowerFloorMaterial.WOOD: "mdi:pine-tree-box",
-}
-
-FLOOR_MATERIAL_DIRECTION_TO_ICON = {
-    DreameMowerFloorMaterialDirection.VERTICAL: "mdi:swap-vertical-bold",
-    DreameMowerFloorMaterialDirection.HORIZONTAL: "mdi:swap-horizontal-bold",
 }
 
 SEGMENT_VISIBILITY_TO_ICON = {
@@ -167,6 +152,7 @@ SELECTS: tuple[DreameMowerSelectEntityDescription, ...] = (
     ),
 )
 
+# FORK: CLEAN-01 - vacuum floor material segment selects removed
 SEGMENT_SELECTS: tuple[DreameMowerSelectEntityDescription, ...] = (
     DreameMowerSelectEntityDescription(
         key=DreameMowerProperty.CLEANING_MODE.name.lower(),
@@ -261,66 +247,6 @@ SEGMENT_SELECTS: tuple[DreameMowerSelectEntityDescription, ...] = (
         value_fn=lambda device, segment: str(segment.order) if segment.order else STATE_NOT_SET,
         exists_fn=lambda description, device: device.capability.customized_cleaning,
         segment_list_fn=lambda device: device.status.current_segments,
-    ),
-    DreameMowerSelectEntityDescription(
-        key="floor_material",
-        icon_fn=lambda value, segment: (
-            FLOOR_MATERIAL_TO_ICON.get(segment.floor_material, "mdi:checkbox-blank")
-            if segment
-            else "mdi:checkbox-blank-off"
-        ),
-        entity_category=EntityCategory.CONFIG,
-        segment_available_fn=lambda device, segment: bool(
-            device.status.current_segments
-            and segment.floor_material is not None
-            and segment.visibility != False
-            and not device.status.started
-            and not device.status.fast_mapping
-            and not device.status.has_temporary_map
-            and not device.status.scheduled_clean
-            and device.status.has_saved_map
-        ),
-        value_fn=lambda device, segment: FLOOR_MATERIAL_CODE_TO_NAME.get(segment.floor_material, STATE_UNKNOWN),
-        value_int_fn=lambda value, self: DreameMowerFloorMaterial[value.upper()].value,
-        exists_fn=lambda description, device: device.capability.floor_material,
-        segment_list_fn=lambda device: device.status.segments,
-    ),
-    DreameMowerSelectEntityDescription(
-        key="floor_material_direction",
-        icon_fn=lambda value, segment: (
-            FLOOR_MATERIAL_DIRECTION_TO_ICON.get(
-                segment.floor_material_rotated_direction,
-                "mdi:arrow-top-left-bottom-right-bold",
-            )
-            if segment and segment.floor_material == 1
-            else "mdi:arrow-top-left-bottom-right-bold"
-        ),
-        entity_category=EntityCategory.CONFIG,
-        segment_available_fn=lambda device, segment: bool(
-            device.status.current_segments
-            and segment.floor_material == 1
-            and segment.visibility != False
-            and not device.status.started
-            and not device.status.fast_mapping
-            and not device.status.has_temporary_map
-            and not device.status.scheduled_clean
-            and device.status.has_saved_map
-        ),
-        value_fn=lambda device, segment: FLOOR_MATERIAL_DIRECTION_CODE_TO_NAME.get(
-            (
-                segment.floor_material_rotated_direction
-                if segment.floor_material_rotated_direction is not None
-                else (
-                    DreameMowerFloorMaterialDirection.VERTICAL
-                    if device.status.current_map.rotation == 0 or device.status.current_map.rotation == 180
-                    else DreameMowerFloorMaterialDirection.HORIZONTAL
-                )
-            ),
-            STATE_UNKNOWN,
-        ),
-        value_int_fn=lambda value, self: DreameMowerFloorMaterialDirection[value.upper()].value,
-        exists_fn=lambda description, device: device.capability.floor_direction_cleaning,
-        segment_list_fn=lambda device: device.status.segments,
     ),
     DreameMowerSelectEntityDescription(
         key="visibility",

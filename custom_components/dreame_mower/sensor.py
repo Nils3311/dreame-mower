@@ -30,7 +30,6 @@ from .const import (
 from .dreame import (
     DreameMowerProperty,
     DreameMowerRelocationStatus,
-    DreameMowerStreamStatus,
 )
 from .dreame.const import ATTR_VALUE
 from .dreame.types import ATTR_ZONE_ID, ATTR_ZONE_ICON
@@ -38,13 +37,6 @@ from .dreame.types import ATTR_ZONE_ID, ATTR_ZONE_ICON
 from .coordinator import DreameMowerDataUpdateCoordinator
 from .entity import DreameMowerEntity, DreameMowerEntityDescription
 
-
-STREAM_STATUS_TO_ICON = {
-    DreameMowerStreamStatus.IDLE: "mdi:webcam",
-    DreameMowerStreamStatus.VIDEO: "mdi:cctv",
-    DreameMowerStreamStatus.AUDIO: "mdi:microphone",
-    DreameMowerStreamStatus.RECORDING: "mdi:record-rec",
-}
 
 RELOCATION_STATUS_TO_ICON = {
     DreameMowerRelocationStatus.LOCATED: "mdi:map-marker-radius",
@@ -59,6 +51,7 @@ class DreameMowerSensorEntityDescription(DreameMowerEntityDescription, SensorEnt
     """Describes DreameMower sensor entity."""
 
 
+# FORK: CLEAN-01 - vacuum-only sensor descriptions removed (side brush, filter, tank filter, silver ion, lensbrush, squeegee, sensor dirty, stream status)
 SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
     DreameMowerSensorEntityDescription(
         property_key=DreameMowerProperty.CLEANING_TIME,
@@ -99,12 +92,6 @@ SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
         exists_fn=lambda description, device: device.capability.task_type,
     ),
     DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.STREAM_STATUS,
-        icon_fn=lambda value, device: STREAM_STATUS_TO_ICON.get(device.status.stream_status, "mdi:webcam-off"),
-        exists_fn=lambda description, device: device.capability.camera_streaming
-        or DreameMowerEntityDescription().exists_fn(description, device),
-    ),
-    DreameMowerSensorEntityDescription(
         property_key=DreameMowerProperty.ERROR,
         icon_fn=lambda value, device: (
             "mdi:alert-circle-outline"
@@ -138,112 +125,6 @@ SENSORS: tuple[DreameMowerSensorEntityDescription, ...] = (
         property_key=DreameMowerProperty.BLADES_TIME_LEFT,
         icon="mdi:car-turbocharger",
         native_unit_of_measurement=UNIT_HOURS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SIDE_BRUSH_LEFT,
-        icon="mdi:pinwheel-outline",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SIDE_BRUSH_TIME_LEFT,
-        icon="mdi:pinwheel-outline",
-        native_unit_of_measurement=UNIT_HOURS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.FILTER_LEFT,
-        icon="mdi:air-filter",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.FILTER_TIME_LEFT,
-        icon="mdi:air-filter",
-        native_unit_of_measurement=UNIT_HOURS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SENSOR_DIRTY_LEFT,
-        icon="mdi:radar",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-        exists_fn=lambda description, device: not device.capability.disable_sensor_cleaning,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SENSOR_DIRTY_TIME_LEFT,
-        icon="mdi:radar",
-        native_unit_of_measurement=UNIT_HOURS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-        exists_fn=lambda description, device: not device.capability.disable_sensor_cleaning,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.TANK_FILTER_LEFT,
-        icon="mdi:air-filter",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.TANK_FILTER_TIME_LEFT,
-        icon="mdi:air-filter",
-        native_unit_of_measurement=UNIT_HOURS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SILVER_ION_LEFT,
-        icon="mdi:shimmer",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SILVER_ION_TIME_LEFT,
-        icon="mdi:shimmer",
-        native_unit_of_measurement=UNIT_DAYS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.LENSBRUSH_LEFT,
-        icon="mdi:brush",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device) and device.capability.lensbrush
-        )
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.LENSBRUSH_TIME_LEFT,
-        icon="mdi:brush-outline",
-        native_unit_of_measurement=UNIT_DAYS,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        exists_fn=lambda description, device: bool(
-            DreameMowerEntityDescription().exists_fn(description, device) and device.capability.lensbrush
-        )
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SQUEEGEE_LEFT,
-        icon="mdi:squeegee",
-        native_unit_of_measurement=UNIT_PERCENT,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        # entity_registry_enabled_default=False,
-    ),
-    DreameMowerSensorEntityDescription(
-        property_key=DreameMowerProperty.SQUEEGEE_TIME_LEFT,
-        icon="mdi:squeegee",
-        native_unit_of_measurement=UNIT_DAYS,
         entity_category=EntityCategory.DIAGNOSTIC,
         # entity_registry_enabled_default=False,
     ),
