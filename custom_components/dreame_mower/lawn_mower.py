@@ -26,20 +26,16 @@ from .dreame import (
     InvalidActionException,
     ACTION_AVAILABILITY,
 )
+# FORK: CLEAN-01 - removed vacuum imports (FAN_SPEED_*, vacuum CONSUMABLEs,
+# INPUT_LANGUAGE_ID/URL/MD5/SIZE, voice pack service constant)
 from .const import (
     DOMAIN,
-    FAN_SPEED_SILENT,
-    FAN_SPEED_STANDARD,
-    FAN_SPEED_STRONG,
-    FAN_SPEED_TURBO,
     INPUT_CLEANING_SEQUENCE,
-    INPUT_LANGUAGE_ID,
     INPUT_LINE,
     INPUT_MAP_ID,
     INPUT_MAP_NAME,
     INPUT_FILE_URL,
     INPUT_RECOVERY_MAP_INDEX,
-    INPUT_MD5,
     INPUT_REPEATS,
     INPUT_CLEANING_MODE,
     INPUT_ROTATION,
@@ -47,8 +43,6 @@ from .const import (
     INPUT_SEGMENT_ID,
     INPUT_SEGMENT_NAME,
     INPUT_SEGMENTS_ARRAY,
-    INPUT_SIZE,
-    INPUT_URL,
     INPUT_VELOCITY,
     INPUT_WALL_ARRAY,
     INPUT_ZONE,
@@ -68,7 +62,6 @@ from .const import (
     SERVICE_CLEAN_SPOT,
     SERVICE_GOTO,
     SERVICE_FOLLOW_PATH,
-    SERVICE_INSTALL_VOICE_PACK,
     SERVICE_MERGE_SEGMENTS,
     SERVICE_MOVE_REMOTE_CONTROL_STEP,
     SERVICE_RENAME_MAP,
@@ -95,13 +88,6 @@ from .const import (
     SERVICE_SET_OBSTACLE_IGNORE,
     SERVICE_SET_ROUTER_POSITION,
     CONSUMABLE_BLADES,
-    CONSUMABLE_SIDE_BRUSH,
-    CONSUMABLE_FILTER,
-    CONSUMABLE_TANK_FILTER,
-    CONSUMABLE_SENSOR,
-    CONSUMABLE_SILVER_ION,
-    CONSUMABLE_LENSBRUSH,
-    CONSUMABLE_SQUEEGEE,
 )
 
 SUPPORT_DREAME = (
@@ -116,7 +102,7 @@ STATE_CODE_TO_STATE: Final = {
     DreameMowerState.IDLE: LawnMowerActivity.DOCKED,
     DreameMowerState.PAUSED: LawnMowerActivity.PAUSED,
     DreameMowerState.ERROR: LawnMowerActivity.ERROR,
-    DreameMowerState.RETURNING: LawnMowerActivity.MOWING,
+    DreameMowerState.RETURNING: LawnMowerActivity.RETURNING,  # FORK: SENS-02 - map RETURNING to LawnMowerActivity.RETURNING (was MOWING)
     DreameMowerState.CHARGING: LawnMowerActivity.DOCKED,
     DreameMowerState.BUILDING: LawnMowerActivity.DOCKED,
     DreameMowerState.CHARGING_COMPLETED: LawnMowerActivity.DOCKED,
@@ -135,15 +121,9 @@ STATE_CODE_TO_STATE: Final = {
     DreameMowerState.MONITORING_PAUSED: LawnMowerActivity.DOCKED,
 }
 
+# FORK: CLEAN-01 - removed vacuum consumable reset actions (kept only BLADES)
 CONSUMABLE_RESET_ACTION = {
     CONSUMABLE_BLADES: DreameMowerAction.RESET_BLADES,
-    CONSUMABLE_SIDE_BRUSH: DreameMowerAction.RESET_SIDE_BRUSH,
-    CONSUMABLE_FILTER: DreameMowerAction.RESET_FILTER,
-    CONSUMABLE_TANK_FILTER: DreameMowerAction.RESET_TANK_FILTER,
-    CONSUMABLE_SENSOR: DreameMowerAction.RESET_SENSOR,
-    CONSUMABLE_SILVER_ION: DreameMowerAction.RESET_SILVER_ION,
-    CONSUMABLE_LENSBRUSH: DreameMowerAction.RESET_LENSBRUSH,
-    CONSUMABLE_SQUEEGEE: DreameMowerAction.RESET_SQUEEGEE,
 }
 
 
@@ -385,16 +365,7 @@ async def async_setup_entry(
         DreameMower.async_remote_control_move_step.__name__,
     )
 
-    platform.async_register_entity_service(
-        SERVICE_INSTALL_VOICE_PACK,
-        {
-            vol.Required(INPUT_LANGUAGE_ID): cv.string,
-            vol.Required(INPUT_URL): cv.url,
-            vol.Required(INPUT_MD5): cv.string,
-            vol.Required(INPUT_SIZE): cv.positive_int,
-        },
-        DreameMower.async_install_voice_pack.__name__,
-    )
+    # FORK: CLEAN-01 - removed vacuum voice pack service registration
 
     platform.async_register_entity_service(
         SERVICE_RENAME_MAP,
@@ -490,16 +461,10 @@ async def async_setup_entry(
     platform.async_register_entity_service(
         SERVICE_RESET_CONSUMABLE,
         {
+            # FORK: CLEAN-01 - only blades consumable for mowers
             vol.Required(INPUT_CONSUMABLE): vol.In(
                 [
                     CONSUMABLE_BLADES,
-                    CONSUMABLE_SIDE_BRUSH,
-                    CONSUMABLE_FILTER,
-                    CONSUMABLE_TANK_FILTER,
-                    CONSUMABLE_SENSOR,
-                    CONSUMABLE_SILVER_ION,
-                    CONSUMABLE_LENSBRUSH,
-                    CONSUMABLE_SQUEEGEE,
                 ]
             ),
         },
@@ -588,11 +553,9 @@ class DreameMower(DreameMowerEntity, LawnMowerEntity):
             and not self.device.status.scheduled_clean
         ):
             self._attr_supported_features = self._attr_supported_features
-            self._attr_fan_speed = None
-            self._attr_fan_speed_list = []
+            # FORK: CLEAN-01 - removed vacuum fan_speed dead code (fan_speed=None, fan_speed_list=[])
         else:
-            self._attr_fan_speed = None
-            self._attr_fan_speed_list = []
+            pass  # FORK: CLEAN-01 - removed vacuum fan_speed dead code
 
         # if ACTION_AVAILABILITY[DreameMowerAction.START_MOWING.name](self.device):
         self._attr_supported_features = self._attr_supported_features | LawnMowerEntityFeature.START_MOWING
@@ -662,7 +625,12 @@ class DreameMower(DreameMowerEntity, LawnMowerEntity):
         await self._try_command("Unable to call return_to_base: %s", self.device.return_to_base)
 
     async def async_dock(self, **kwargs) -> None:
-        """Set the mower cleaner to return to the dock."""
+        """Set the mower to return to the dock."""
+        # FORK: CTRL-03 / Fix #35 - stop before dock to mark session COMPLETED
+        # and avoid breaking schedules. stop() sets DreameMowerTaskStatus.COMPLETED
+        # which tells the cloud the session ended cleanly.
+        if self.device.status.started:
+            await self._try_command("Unable to call stop: %s", self.device.stop)
         await self._try_command("Unable to call return_to_base: %s", self.device.dock)
 
     async def async_clean_zone(self, zone, repeats=1) -> None:
@@ -873,16 +841,7 @@ class DreameMower(DreameMowerEntity, LawnMowerEntity):
                 cleaning_mode,
             )
 
-    async def async_install_voice_pack(self, lang_id, url, md5, size, **kwargs) -> None:
-        """install a custom language pack"""
-        await self._try_command(
-            "Unable to call install_voice_pack: %s",
-            self.device.install_voice_pack,
-            lang_id,
-            url,
-            md5,
-            size,
-        )
+    # FORK: CLEAN-01 - removed vacuum voice pack method (async_install_voice_pack)
 
     async def async_send_command(self, command: str, params=None, **kwargs) -> None:
         """Send a command to a mower cleaner."""
