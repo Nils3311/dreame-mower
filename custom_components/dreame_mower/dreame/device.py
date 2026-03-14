@@ -507,9 +507,13 @@ class DreameMowerDevice:
 
         if skipped:
             _LOGGER.debug("FORK: Skipped properties (not in data yet): %s", skipped)
-        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s), first 3: %s", len(property_list), self._ready, property_list[:3])
+        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s)", len(property_list), self._ready)
         results = self._protocol.get_properties(property_list)
-        _LOGGER.warning("FORK DIAG: Got %s results: %s", type(results).__name__ if results else "None", str(results)[:300] if results else "None")
+        try:
+            with open("/config/dreame_mower_props.json", "w") as f:
+                json.dump({"request_count": len(property_list), "ready": self._ready, "results": results, "request_sample": property_list[:5]}, f, indent=2, default=str)
+        except Exception:
+            pass
         return self._handle_properties(results)
 
     def _update_status(self, task_status: DreameMowerTaskStatus, status: DreameMowerStatus) -> None:
@@ -1901,14 +1905,21 @@ class DreameMowerDevice:
         # Without this, all properties stay None after startup.
         if not self._ready:
             force_request_properties = True
-            _LOGGER.warning("FORK DIAG: First update - cloud_connected=%s, dreame_cloud=%s, device_connected=%s, protocol.cloud=%s, protocol.cloud.logged_in=%s, protocol.cloud.device_id=%s",
-                self.cloud_connected,
-                self._protocol.dreame_cloud,
-                self.device_connected,
-                self._protocol.cloud is not None,
-                self._protocol.cloud.logged_in if self._protocol.cloud else "N/A",
-                self._protocol.cloud.device_id if self._protocol.cloud else "N/A"
-            )
+            diag = {
+                "cloud_connected": self.cloud_connected,
+                "dreame_cloud": self._protocol.dreame_cloud,
+                "device_connected": self.device_connected,
+                "cloud_exists": self._protocol.cloud is not None,
+                "cloud_logged_in": self._protocol.cloud.logged_in if self._protocol.cloud else None,
+                "cloud_device_id": str(self._protocol.cloud.device_id) if self._protocol.cloud else None,
+                "map_manager": self._map_manager is not None,
+            }
+            _LOGGER.warning("FORK DIAG: First update: %s", diag)
+            try:
+                with open("/config/dreame_mower_diag.json", "w") as f:
+                    json.dump(diag, f, indent=2)
+            except Exception:
+                pass
 
         if not self.cloud_connected:
             self.connect_cloud()
