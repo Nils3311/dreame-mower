@@ -13,8 +13,11 @@ import numpy as np
 import hashlib
 import textwrap
 from datetime import datetime
-# FORK: Fix FOUND-02 - py-mini-racer is dead, use mini-racer
-from mini_racer import MiniRacer
+# FORK: Fix FOUND-02 - mini-racer import is optional (may not have V8 binaries in HA Docker)
+try:
+    from mini_racer import MiniRacer
+except ImportError:
+    MiniRacer = None
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
@@ -9149,7 +9152,7 @@ class DreameMowerMapOptimizer:
         try:
             now = time.time()
 
-            if js_optimizer:
+            if js_optimizer and MiniRacer is not None:
                 if self._js_optimizer == None:
                     self._js_optimizer = MiniRacer()
                     self._js_optimizer.eval(base64.b64decode(MAP_OPTIMIZER_JS))
