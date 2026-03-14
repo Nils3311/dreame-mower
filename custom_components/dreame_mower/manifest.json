@@ -2,21 +2,21 @@
   "domain": "dreame_mower",
   "name": "Dreame Mower",
   "codeowners": [
-    "@bhuebschen"
+    "@nilshoffmann"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/bhuebschen/dreame-mower",
+  "documentation": "https://github.com/nilshoffmann/dreame-mower",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/bhuebschen/dreame-mower/issues",
+  "issue_tracker": "https://github.com/nilshoffmann/dreame-mower/issues",
   "requirements": [
-    "pillow",
-    "numpy",
-    "pybase64",
-    "requests",
-    "pycryptodome",
-    "python-miio",
-    "py-mini-racer",
-    "paho-mqtt"
+    "pillow>=12.0.0",
+    "numpy>=2.0.0",
+    "pybase64>=1.4.0",
+    "requests>=2.31.0",
+    "pycryptodome>=3.20.0",
+    "python-miio>=0.5.12",
+    "mini-racer>=0.12.0",
+    "paho-mqtt>=2.0.0"
   ],
-  "version": "v0.0.5-alpha"
+  "version": "0.1.0"
 }

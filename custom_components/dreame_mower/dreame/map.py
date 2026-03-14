@@ -13,7 +13,8 @@ import numpy as np
 import hashlib
 import textwrap
 from datetime import datetime
-from py_mini_racer import MiniRacer
+# FORK: Fix FOUND-02 - py-mini-racer is dead, use mini-racer
+from mini_racer import MiniRacer
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives import padding
