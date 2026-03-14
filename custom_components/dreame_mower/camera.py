@@ -441,6 +441,8 @@ class DreameMowerCameraEntity(DreameMowerEntity, Camera):
         map_index: int = 0,
     ) -> None:
         """Initialize a Dreame Mower Camera entity."""
+        # FORK: Fix #42 / MAP-04 - HA 2024.11 requires _webrtc_provider attribute
+        self._webrtc_provider = None
         super().__init__(coordinator, description)
         self._generate_entity_id(ENTITY_ID_FORMAT)
         self.content_type = PNG_CONTENT_TYPE

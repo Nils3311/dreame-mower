@@ -248,6 +248,7 @@ class DreameMowerDreameHomeCloudProtocol:
                         _LOGGER.debug("Connecting to the device client")
                         try:
                             host = self._host.split(":")
+                            # FORK: Verified FOUND-04 - VERSION1 compat confirmed; all callback signatures match
                             self._client = mqtt_client.Client(
                                 mqtt_client.CallbackAPIVersion.VERSION1,
                                 f"{self._strings[53]}{self._uid}{self._strings[54]}{DreameMowerDreameHomeCloudProtocol.get_random_agent_id()}{self._strings[54]}{host[0]}",

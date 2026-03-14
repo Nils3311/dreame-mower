@@ -65,10 +65,8 @@ LOCAL: Final = "Manual Connection (Without map)"
 
 class DreameMowerOptionsFlowHandler(OptionsFlow):
     """Handle Dreame Mower options."""
-
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize Dreame Mower options flow."""
-        self.config_entry = config_entry
+    # FORK: Fix #41 / CLEAN-02 - HA 2025.12 deprecated explicit config_entry assignment
+    # Base class manages config_entry automatically
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -163,7 +161,7 @@ class DreameMowerFlowHandler(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> DreameMowerOptionsFlowHandler:
         """Get the options flow for this handler."""
-        return DreameMowerOptionsFlowHandler(config_entry)
+        return DreameMowerOptionsFlowHandler()  # FORK: Fix #41 - no args needed
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -459,7 +457,7 @@ class DreameMowerFlowHandler(ConfigFlow, domain=DOMAIN):
                                 and len(device["customName"]) > 0
                                 else device["deviceInfo"]["displayName"]
                             )
-                            model = model_map[device["model"]]
+                            model = model_map.get(device["model"], device["model"])  # FORK: Prevent KeyError for unknown models
                             modelId = device["model"]
                             list_name = f"{name} - {model} ({modelId})"
                             self.devices[list_name] = device
