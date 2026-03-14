@@ -567,6 +567,21 @@ class DreameMowerDreameHomeCloudProtocol:
             return None
         return api_response["data"]
 
+    def get_device_user_data(self) -> Any:
+        """Fetch all device data including map via iotuserdata/getDeviceData.
+
+        This is the Mova-specific endpoint that returns MAP chunks, M_PATH,
+        SETTINGS, SCHEDULE_TASK, etc. — everything the app needs.
+        """
+        api_response = self._api_call(
+            f"{self._strings[23]}/{self._strings[26]}/{self._strings[44]}",
+            {"did": str(self._did), "uid": str(self._uid), self._strings[21]: self._country},
+        )
+        if api_response and api_response.get("code") == 0:
+            return api_response.get("data")
+        _LOGGER.warning("get_device_user_data failed: %s", api_response)
+        return None
+
     def set_batch_device_datas(self, props) -> Any:
         api_response = self._api_call(
             f"{self._strings[23]}/{self._strings[26]}/{self._strings[45]}",
@@ -777,7 +792,63 @@ class DreameMowerProtocol:
         return response
 
     def get_properties(self, parameters: Any = None, retry_count: int = 1) -> Any:
+        if self._account_type == "mova":
+            return self._get_properties_mova(parameters)
         return self.send("get_properties", parameters=parameters, retry_count=retry_count)
+
+    def _get_properties_mova(self, parameters: Any = None) -> Any:
+        """Get properties via iotstatus/props for Mova devices.
+
+        Converts the property_list format [{"did": ..., "siid": 2, "piid": 1}, ...]
+        to comma-separated keys "2.1,3.1,..." and transforms the response back.
+        """
+        if not parameters:
+            return None
+
+        keys = []
+        for p in parameters:
+            if isinstance(p, dict) and "siid" in p and "piid" in p and "aiid" not in p:
+                keys.append(f"{p['siid']}.{p['piid']}")
+        if not keys:
+            return None
+
+        keys_str = ",".join(keys)
+        result = self.cloud.get_properties(keys_str)
+        if not result:
+            return None
+
+        did = str(self.cloud.device_id)
+        transformed = []
+        for p in result:
+            if "value" not in p:
+                continue
+            parts = p["key"].split(".")
+            if len(parts) != 2:
+                continue
+            value = p["value"]
+            if isinstance(value, str):
+                try:
+                    value = int(value)
+                except ValueError:
+                    try:
+                        value = float(value)
+                    except ValueError:
+                        pass
+            transformed.append({
+                "did": did,
+                "siid": int(parts[0]),
+                "piid": int(parts[1]),
+                "code": 0,
+                "value": value,
+            })
+
+        return transformed
+
+    def get_device_user_data(self) -> Any:
+        """Fetch all device data including map (Mova-specific, delegates to cloud)."""
+        if self.cloud:
+            return self.cloud.get_device_user_data()
+        return None
 
     def set_property(self, siid: int, piid: int, value: Any = None, retry_count: int = 2) -> Any:
         return self.set_properties(

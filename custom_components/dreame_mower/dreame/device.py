@@ -137,6 +137,7 @@ from .exceptions import (
 )
 from .protocol import DreameMowerProtocol
 from .map import DreameMapMowerMapManager, DreameMowerMapDecoder
+from .mova_map import MovaMapManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -302,13 +303,25 @@ class DreameMowerDevice:
             account_type,
             device_id,
         )
+
+        # Mova-specific: use MovaMapManager instead of DreameMapMowerMapManager
+        self._is_mova = account_type == "mova"
+        self._mova_map_manager: MovaMapManager | None = None
+        self._last_mova_map_update: float = 0
+        self._mova_map_refresh_interval: float = 300  # 5 minutes
+
         if self._protocol.cloud:
-            try:
-                self._map_manager = DreameMapMowerMapManager(self._protocol)
-            except Exception as ex:
-                _LOGGER = logging.getLogger(__name__)
-                _LOGGER.error("FORK: Failed to initialize map manager: %s", ex, exc_info=True)
-                self._map_manager = None
+            if self._is_mova:
+                # Mova uses vector polygon maps from iotuserdata/getDeviceData
+                # Skip DreameMapMowerMapManager (designed for raster pixel maps)
+                self._mova_map_manager = MovaMapManager()
+                _LOGGER.info("Mova device detected — using MovaMapManager for maps")
+            else:
+                try:
+                    self._map_manager = DreameMapMowerMapManager(self._protocol)
+                except Exception as ex:
+                    _LOGGER.error("Failed to initialize map manager: %s", ex, exc_info=True)
+                    self._map_manager = None
 
             if self._map_manager:
                 self.listen(self._map_list_changed, DreameMowerProperty.MAP_LIST)
@@ -530,17 +543,9 @@ class DreameMowerDevice:
                     skipped.append(prop.name)
 
         if skipped:
-            _LOGGER.debug("FORK: Skipped properties (not in data yet): %s", skipped)
-        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s, data_size=%d)", len(property_list), self._ready, len(self.data))
+            _LOGGER.debug("Skipped properties (not in data yet): %s", skipped)
+        _LOGGER.debug("Requesting %d properties (ready=%s, data_size=%d)", len(property_list), self._ready, len(self.data))
         results = self._protocol.get_properties(property_list)
-        import os
-        diag_file = f"/config/dreame_mower_props_{len(self.data)}.json"
-        try:
-            if not os.path.exists(diag_file):
-                with open(diag_file, "w") as f:
-                    json.dump({"request_count": len(property_list), "ready": self._ready, "data_size": len(self.data), "results_type": type(results).__name__ if results else "None", "results_len": len(results) if results else 0, "results_sample": (results[:3] if isinstance(results, list) else str(results)[:300]) if results else None, "request_sample": property_list[:5]}, f, indent=2, default=str)
-        except Exception:
-            pass
         return self._handle_properties(results)
 
     def _update_status(self, task_status: DreameMowerTaskStatus, status: DreameMowerStatus) -> None:
@@ -1270,7 +1275,10 @@ class DreameMowerDevice:
             self._last_update_failed = None
 
             if self.device_connected and self._protocol.cloud is not None and (not self._ready or not self.available):
-                if self._map_manager:
+                if self._is_mova and self._mova_map_manager:
+                    # Mova: fetch map via getDeviceData
+                    self._fetch_mova_map()
+                elif self._map_manager:
                     model = self.info.model.split(".")
                     if len(model) == 3:
                         for k, v in json.loads(
@@ -1299,7 +1307,7 @@ class DreameMowerDevice:
 
                 if self.cloud_connected:
                     self._cleaning_history_update = -1
-                    if (self.capability.ai_detection and not self.status.ai_policy_accepted) or True:
+                    if not self._is_mova and ((self.capability.ai_detection and not self.status.ai_policy_accepted) or True):
                         try:
                             prop = "prop.s_ai_config"
                             response = self._protocol.cloud.get_batch_device_datas([prop])
@@ -1911,6 +1919,12 @@ class DreameMowerDevice:
         """Trigger a map update.
         This function is used for requesting map data when a image request has been made to renderer
         """
+        if self._is_mova:
+            # Mova: refresh via getDeviceData if stale (>60s)
+            now = time.time()
+            if now - self._last_mova_map_update > 60:
+                self._fetch_mova_map()
+            return
 
         self._last_change = time.time()
         if self._map_manager:
@@ -1920,6 +1934,36 @@ class DreameMowerDevice:
                 self._map_manager.set_update_interval(self._map_update_interval)
                 self._map_manager.schedule_update(0.01)
 
+    def _fetch_mova_map(self) -> None:
+        """Fetch and update Mova map data from cloud."""
+        if not self._mova_map_manager:
+            return
+        try:
+            data = self._protocol.get_device_user_data()
+            if data:
+                changed = self._mova_map_manager.update(data)
+                self._last_mova_map_update = time.time()
+                if changed:
+                    _LOGGER.info("Mova map updated (md5=%s)", self._mova_map_manager.md5sum)
+                    self._last_change = time.time()
+                    self._property_changed()
+            else:
+                _LOGGER.warning("Mova: get_device_user_data returned no data")
+        except Exception as ex:
+            _LOGGER.error("Mova map fetch failed: %s", ex)
+
+    @property
+    def mova_map_image(self) -> bytes | None:
+        """Get the current Mova map PNG image."""
+        if self._mova_map_manager and self._mova_map_manager.available:
+            return self._mova_map_manager.image
+        return None
+
+    @property
+    def mova_map_available(self) -> bool:
+        """Whether Mova map data is available."""
+        return bool(self._mova_map_manager and self._mova_map_manager.available)
+
     def update(self, force_request_properties=False) -> None:
         """Get properties from the device."""
         _LOGGER.debug("Device update: %s", self._update_interval)
@@ -1927,26 +1971,13 @@ class DreameMowerDevice:
         if self._update_running:
             return
 
-        # FORK: Force property request on first update — dreame_cloud devices
+        # Force property request on first update — dreame_cloud devices
         # rely on MQTT push, but nothing gets pushed until something changes.
         # Without this, all properties stay None after startup.
         if not self._ready:
             force_request_properties = True
-            diag = {
-                "cloud_connected": self.cloud_connected,
-                "dreame_cloud": self._protocol.dreame_cloud,
-                "device_connected": self.device_connected,
-                "cloud_exists": self._protocol.cloud is not None,
-                "cloud_logged_in": self._protocol.cloud.logged_in if self._protocol.cloud else None,
-                "cloud_device_id": str(self._protocol.cloud.device_id) if self._protocol.cloud else None,
-                "map_manager": self._map_manager is not None,
-            }
-            _LOGGER.warning("FORK DIAG: First update: %s", diag)
-            try:
-                with open("/config/dreame_mower_diag.json", "w") as f:
-                    json.dump(diag, f, indent=2)
-            except Exception:
-                pass
+            _LOGGER.info("First update: cloud=%s, device=%s, mova=%s",
+                         self.cloud_connected, self.device_connected, self._is_mova)
 
         if not self.cloud_connected:
             self.connect_cloud()
@@ -2030,7 +2061,13 @@ class DreameMowerDevice:
                     ]
                 )
 
-        # FORK: Always request MAP_LIST for cloud devices (every 60s)
+        # Mova: refresh map data periodically (every 5 min, or more often while mowing)
+        if self._is_mova and self._mova_map_manager and self._ready:
+            mova_interval = 60 if self.status.active else self._mova_map_refresh_interval
+            if now - self._last_mova_map_update > mova_interval:
+                self._fetch_mova_map()
+
+        # Always request MAP_LIST for cloud devices (every 60s)
         # Original code skipped this while running and never actively fetched for dreame_cloud
         if self._map_manager and now - self._last_map_list_request > 60:
             properties.extend([DreameMowerProperty.MAP_LIST, DreameMowerProperty.RECOVERY_MAP_LIST])

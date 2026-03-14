@@ -1334,7 +1334,7 @@ class DreameMowerDeviceCapability:
     @property
     def map(self) -> bool:
         """Returns true when mapping feature is available."""
-        return bool(self._device._map_manager is not None)
+        return bool(self._device._map_manager is not None or self._device._mova_map_manager is not None)
 
     @property
     def custom_cleaning_mode(self) -> bool:

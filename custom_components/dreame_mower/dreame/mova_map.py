@@ -1,0 +1,454 @@
+"""Mova 600 Plus Map Renderer.
+
+Standalone module for parsing and rendering Mova mower map data.
+Works both as a local test script and as an HA integration module.
+
+Map data comes from the `iotuserdata/getDeviceData` cloud endpoint.
+It's stored as chunked JSON (MAP.0-MAP.N with MAP.info length header).
+The map format uses vector polygons (not raster pixels like Dreame Vacuum).
+"""
+
+import io
+import json
+import logging
+from typing import Any
+
+from PIL import Image, ImageDraw
+
+_LOGGER = logging.getLogger(__name__)
+
+# Colors (RGBA)
+COLOR_BACKGROUND = (40, 40, 40, 255)
+COLOR_CONTOUR_FILL = (60, 120, 60, 255)
+COLOR_CONTOUR_OUTLINE = (80, 160, 80, 255)
+COLOR_MOWING_AREA = (100, 180, 100, 255)
+COLOR_MOWING_AREA_OUTLINE = (120, 200, 120, 255)
+COLOR_FORBIDDEN_ZONE = (200, 60, 60, 180)
+COLOR_FORBIDDEN_ZONE_OUTLINE = (255, 80, 80, 255)
+COLOR_PATH = (255, 255, 100, 120)
+COLOR_CHARGER = (0, 150, 255, 255)
+COLOR_CHARGER_OUTLINE = (255, 255, 255, 255)
+COLOR_ROBOT = (255, 200, 0, 255)
+COLOR_ROBOT_OUTLINE = (255, 255, 255, 255)
+
+# Path segment separator (pen-up marker)
+PATH_PEN_UP_X = 32767
+PATH_PEN_UP_Y = -32768
+
+DEFAULT_WIDTH = 800
+DEFAULT_HEIGHT = 800
+DEFAULT_PADDING = 40
+
+
+def parse_chunked_data(data: dict, prefix: str) -> str | None:
+    """Reassemble chunked data (PREFIX.0, PREFIX.1, ...) using PREFIX.info as length.
+
+    The Mova cloud stores large data split across multiple keys:
+    - PREFIX.info = total character count
+    - PREFIX.0, PREFIX.1, ... = chunks of max 1024 chars each
+    """
+    info_key = f"{prefix}.info"
+    total_len = int(data.get(info_key, 0))
+    if total_len == 0:
+        return None
+
+    chunks = {}
+    dot_prefix = f"{prefix}."
+    for key, val in data.items():
+        if key.startswith(dot_prefix) and key != info_key:
+            try:
+                idx = int(key.split(".")[1])
+                chunks[idx] = str(val)
+            except (ValueError, IndexError):
+                continue
+
+    if not chunks:
+        return None
+
+    full_str = "".join(chunks[i] for i in sorted(chunks.keys()))
+    return full_str[:total_len]
+
+
+def parse_map_data(raw_data: dict) -> list[dict]:
+    """Parse MAP chunks into a list of map objects.
+
+    Returns list of map dicts, each with keys like:
+    mowingAreas, forbiddenAreas, contours, boundary, name, mapIndex, etc.
+
+    Gotcha 13: MAP chunks contain double-encoded JSON.
+    The outer array contains JSON strings that need a second parse.
+    """
+    map_str = parse_chunked_data(raw_data, "MAP")
+    if not map_str:
+        _LOGGER.warning("No MAP data found in device data")
+        return []
+
+    try:
+        maps_raw = json.loads(map_str)
+    except json.JSONDecodeError as e:
+        _LOGGER.error("Failed to parse MAP JSON: %s", e)
+        return []
+
+    maps = []
+    for m in maps_raw:
+        if isinstance(m, str):
+            try:
+                maps.append(json.loads(m))
+            except json.JSONDecodeError:
+                _LOGGER.warning("Failed to parse inner map JSON string")
+                continue
+        elif isinstance(m, dict):
+            maps.append(m)
+
+    return maps
+
+
+def parse_path_data(raw_data: dict) -> list[list[tuple[int, int]]]:
+    """Parse M_PATH chunks into a list of path segments.
+
+    Each segment is a list of (x, y) coordinate tuples.
+    Segments are separated by the pen-up marker [32767, -32768].
+
+    Gotcha 14: M_PATH may be empty (just "[]" with info=2).
+    """
+    path_str = parse_chunked_data(raw_data, "M_PATH")
+    if not path_str or len(path_str) <= 2:
+        return []
+
+    try:
+        path_data = json.loads(f"[{path_str}]")
+    except json.JSONDecodeError as e:
+        _LOGGER.error("Failed to parse M_PATH JSON: %s", e)
+        return []
+
+    segments = []
+    current_segment: list[tuple[int, int]] = []
+    i = 0
+
+    while i < len(path_data):
+        val = path_data[i]
+        if val is None:
+            i += 1
+            continue
+
+        if isinstance(val, list):
+            if len(val) < 2:
+                i += 1
+                continue
+            x, y = val[0], val[1]
+            if x == PATH_PEN_UP_X and y == PATH_PEN_UP_Y:
+                if current_segment:
+                    segments.append(current_segment)
+                current_segment = []
+            else:
+                current_segment.append((int(x), int(y)))
+            i += 1
+        elif isinstance(val, (int, float)):
+            if i + 1 < len(path_data) and isinstance(path_data[i + 1], (int, float)):
+                x, y = int(val), int(path_data[i + 1])
+                if x == PATH_PEN_UP_X and y == PATH_PEN_UP_Y:
+                    if current_segment:
+                        segments.append(current_segment)
+                    current_segment = []
+                else:
+                    current_segment.append((x, y))
+                i += 2
+            else:
+                i += 1
+        else:
+            i += 1
+
+    if current_segment:
+        segments.append(current_segment)
+
+    return segments
+
+
+def parse_settings(raw_data: dict) -> Any | None:
+    """Parse SETTINGS chunks into a settings object (may be dict or list)."""
+    settings_str = parse_chunked_data(raw_data, "SETTINGS")
+    if not settings_str:
+        return None
+    try:
+        return json.loads(settings_str)
+    except json.JSONDecodeError:
+        return None
+
+
+class MovaMapRenderer:
+    """Renders Mova 600 Plus map data as PNG images.
+
+    The Mova map format uses vector polygons (contours, mowing areas,
+    forbidden zones) with coordinates in millimeters relative to the
+    charging station origin (0, 0).
+    """
+
+    def __init__(
+        self,
+        width: int = DEFAULT_WIDTH,
+        height: int = DEFAULT_HEIGHT,
+        padding: int = DEFAULT_PADDING,
+    ):
+        self._width = width
+        self._height = height
+        self._padding = padding
+        self._last_md5: str | None = None
+        self._cached_image: bytes | None = None
+        self._robot_position: tuple[int, int] | None = None
+
+    @property
+    def image_width(self) -> int:
+        return self._width
+
+    @property
+    def image_height(self) -> int:
+        return self._height
+
+    def set_robot_position(self, x: int, y: int) -> None:
+        """Set the robot's current position in map coordinates (mm)."""
+        self._robot_position = (x, y)
+
+    def render(
+        self,
+        map_data: dict,
+        path_segments: list[list[tuple[int, int]]] | None = None,
+        robot_position: tuple[int, int] | None = None,
+    ) -> bytes:
+        """Render the map as a PNG image.
+
+        Args:
+            map_data: Parsed map dict (from parse_map_data()[0])
+            path_segments: Parsed path segments (from parse_path_data())
+            robot_position: Optional (x, y) position of robot in mm
+
+        Returns:
+            PNG image as bytes
+        """
+        md5 = map_data.get("md5sum", "")
+        has_paths = bool(path_segments)
+
+        if md5 and md5 == self._last_md5 and self._cached_image and not has_paths:
+            return self._cached_image
+
+        boundary = map_data.get("boundary")
+        if not boundary:
+            _LOGGER.warning("Map has no boundary, returning empty image")
+            return self._render_empty()
+
+        x_min = boundary["x1"]
+        y_min = boundary["y1"]
+        x_max = boundary["x2"]
+        y_max = boundary["y2"]
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+
+        if x_range <= 0 or y_range <= 0:
+            return self._render_empty()
+
+        w = self._width
+        h = self._height
+        pad = self._padding
+
+        scale = min((w - 2 * pad) / x_range, (h - 2 * pad) / y_range)
+
+        # Center the map in the image
+        rendered_w = x_range * scale
+        rendered_h = y_range * scale
+        x_offset = (w - rendered_w) / 2
+        y_offset = (h - rendered_h) / 2
+
+        def to_screen(x: int | float, y: int | float) -> tuple[int, int]:
+            sx = int((x - x_min) * scale + x_offset)
+            sy = h - int((y - y_min) * scale + y_offset)  # Y-flip
+            return (sx, sy)
+
+        img = Image.new("RGBA", (w, h), COLOR_BACKGROUND)
+        draw = ImageDraw.Draw(img)
+
+        # Layer 1: Contours (garden outline)
+        self._draw_areas(draw, map_data.get("contours", {}), to_screen,
+                         COLOR_CONTOUR_FILL, COLOR_CONTOUR_OUTLINE)
+
+        # Layer 2: Mowing areas (lawn)
+        self._draw_areas(draw, map_data.get("mowingAreas", {}), to_screen,
+                         COLOR_MOWING_AREA, COLOR_MOWING_AREA_OUTLINE)
+
+        # Layer 3: Forbidden areas (no-go zones)
+        self._draw_areas(draw, map_data.get("forbiddenAreas", {}), to_screen,
+                         COLOR_FORBIDDEN_ZONE, COLOR_FORBIDDEN_ZONE_OUTLINE)
+
+        # Layer 4: Mowing paths
+        if path_segments:
+            for segment in path_segments:
+                if len(segment) >= 2:
+                    screen_points = [to_screen(x, y) for x, y in segment]
+                    draw.line(screen_points, fill=COLOR_PATH, width=1)
+
+        # Layer 5: Charging station at origin (0, 0)
+        station = to_screen(0, 0)
+        r = 6
+        draw.ellipse(
+            [station[0] - r, station[1] - r, station[0] + r, station[1] + r],
+            fill=COLOR_CHARGER, outline=COLOR_CHARGER_OUTLINE,
+        )
+
+        # Layer 6: Robot position
+        pos = robot_position or self._robot_position
+        if pos:
+            rp = to_screen(pos[0], pos[1])
+            rr = 5
+            draw.ellipse(
+                [rp[0] - rr, rp[1] - rr, rp[0] + rr, rp[1] + rr],
+                fill=COLOR_ROBOT, outline=COLOR_ROBOT_OUTLINE,
+            )
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        result = buf.getvalue()
+
+        self._last_md5 = md5
+        self._cached_image = result
+
+        return result
+
+    def _draw_areas(
+        self,
+        draw: ImageDraw.ImageDraw,
+        area_container: dict,
+        to_screen,
+        fill_color: tuple,
+        outline_color: tuple,
+    ) -> None:
+        """Draw polygon areas (contours, mowing areas, forbidden zones)."""
+        values = area_container.get("value", [])
+        if not values:
+            return
+
+        for entry in values:
+            if not isinstance(entry, list) or len(entry) < 2:
+                continue
+            area_data = entry[1]
+            if not isinstance(area_data, dict) or "path" not in area_data:
+                continue
+            path = area_data["path"]
+            points = [to_screen(p["x"], p["y"]) for p in path]
+            if len(points) >= 3:
+                draw.polygon(points, fill=fill_color, outline=outline_color)
+
+    def _render_empty(self) -> bytes:
+        """Render an empty placeholder image."""
+        img = Image.new("RGBA", (self._width, self._height), COLOR_BACKGROUND)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+
+class MovaMapManager:
+    """Manages Mova map data fetching, parsing, and rendering.
+
+    This replaces the DreameMapMowerMapManager for Mova devices.
+    Mova stores map data as vector polygons in iotuserdata/getDeviceData,
+    not as encrypted raster data in device properties.
+    """
+
+    def __init__(self, width: int = DEFAULT_WIDTH, height: int = DEFAULT_HEIGHT):
+        self._renderer = MovaMapRenderer(width=width, height=height)
+        self._raw_data: dict | None = None
+        self._active_map: dict | None = None
+        self._all_maps: list[dict] = []
+        self._path_segments: list[list[tuple[int, int]]] = []
+        self._settings: dict | None = None
+        self._image: bytes | None = None
+        self._md5sum: str | None = None
+        self._available = False
+
+    @property
+    def available(self) -> bool:
+        return self._available
+
+    @property
+    def image(self) -> bytes | None:
+        return self._image
+
+    @property
+    def active_map(self) -> dict | None:
+        return self._active_map
+
+    @property
+    def all_maps(self) -> list[dict]:
+        return self._all_maps
+
+    @property
+    def settings(self) -> dict | None:
+        return self._settings
+
+    @property
+    def md5sum(self) -> str | None:
+        return self._md5sum
+
+    def update(self, device_data: dict) -> bool:
+        """Update map data from getDeviceData response.
+
+        Args:
+            device_data: The 'data' dict from getDeviceData API response
+
+        Returns:
+            True if map changed, False if unchanged
+        """
+        self._raw_data = device_data
+
+        maps = parse_map_data(device_data)
+        if not maps:
+            _LOGGER.warning("No valid map data found")
+            self._available = False
+            return False
+
+        self._all_maps = maps
+        self._active_map = maps[0]
+
+        new_md5 = self._active_map.get("md5sum", "")
+        map_changed = new_md5 != self._md5sum
+        self._md5sum = new_md5
+
+        self._path_segments = parse_path_data(device_data)
+        self._settings = parse_settings(device_data)
+        self._available = True
+
+        self._render()
+
+        return map_changed
+
+    def set_robot_position(self, x: int, y: int) -> None:
+        """Update robot position and re-render."""
+        self._renderer.set_robot_position(x, y)
+        if self._available:
+            self._render()
+
+    def _render(self) -> None:
+        """Render the current map to PNG."""
+        if not self._active_map:
+            return
+        try:
+            self._image = self._renderer.render(
+                self._active_map,
+                self._path_segments,
+            )
+        except Exception as e:
+            _LOGGER.error("Map render failed: %s", e)
+            self._image = self._renderer._render_empty()
+
+
+def render_map_from_device_data(device_data: dict, width: int = 800, height: int = 800) -> bytes:
+    """One-shot convenience function: parse device data and render PNG.
+
+    Args:
+        device_data: The 'data' dict from getDeviceData API response
+        width: Image width in pixels
+        height: Image height in pixels
+
+    Returns:
+        PNG image as bytes
+    """
+    mgr = MovaMapManager(width=width, height=height)
+    mgr.update(device_data)
+    return mgr.image or b""

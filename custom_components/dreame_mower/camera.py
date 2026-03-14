@@ -525,6 +525,18 @@ class DreameMowerCameraEntity(DreameMowerEntity, Camera):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Fetch state from the device."""
+        # Mova: simplified update — just grab pre-rendered image
+        if self.device and self.device._is_mova:
+            image = self.device.mova_map_image
+            if image:
+                self._image = image
+                self._default_map = False
+                self._state = datetime.now()
+            else:
+                self._state = STATE_UNAVAILABLE
+            self.async_write_ha_state()
+            return
+
         self._last_map_request = 0
         map_data = self._map_data
         if map_data and self.device.cloud_connected and (self.map_index > 0 or self.device.status.located):
@@ -568,6 +580,16 @@ class DreameMowerCameraEntity(DreameMowerEntity, Camera):
         self.async_write_ha_state()
 
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
+        # Mova: return pre-rendered PNG directly from MovaMapManager
+        if self.device and self.device._is_mova:
+            if self.map_index == 0:
+                self.device.update_map()
+            image = self.device.mova_map_image
+            if image:
+                self._image = image
+                self._default_map = False
+            return self._image
+
         if self._should_poll is True:
             self._should_poll = False
             now = time.time()
@@ -636,6 +658,15 @@ class DreameMowerCameraEntity(DreameMowerEntity, Camera):
             self._proxy_renderer = None
 
     def update(self) -> None:
+        # Mova: get pre-rendered image directly
+        if self.device and self.device._is_mova:
+            image = self.device.mova_map_image
+            if image:
+                self._image = image
+                self._default_map = False
+                self._state = datetime.now()
+            return
+
         map_data = self._map_data
         if map_data and self.device.cloud_connected and (self.map_index > 0 or self.device.status.located):
             self._device_active = self.device.status.active
@@ -864,6 +895,9 @@ class DreameMowerCameraEntity(DreameMowerEntity, Camera):
     @property
     def entity_picture(self) -> str:
         """Return a link to the camera feed as entity picture."""
+        if self.device and self.device._is_mova:
+            ts = int(self.device._last_mova_map_update) if self.device._last_mova_map_update else 0
+            return MAP_IMAGE_URL.format(self.entity_id, self.access_tokens[-1], ts)
         map_data = self._map_data
         return MAP_IMAGE_URL.format(
             self.entity_id,
