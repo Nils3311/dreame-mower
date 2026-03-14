@@ -378,14 +378,37 @@ class DreameMowerDevice:
         for prop in properties:
             if not isinstance(prop, dict):
                 continue
-            did = int(prop["did"])
-            # FORK: Fix #46 / CONN-04 - handle unknown property IDs from new Mova models
-            try:
-                prop_enum = DreameMowerProperty(did)
-            except ValueError:
-                if prop["code"] == 0 and "value" in prop:
-                    _LOGGER.debug("Unknown property ID %s with value %s, skipping", did, prop["value"])
-                    self.data[did] = prop["value"]  # Store raw value for future reference
+
+            # FORK: Cloud API returns did as device_id (e.g. -113852546) instead of
+            # property enum value. Resolve property by matching siid/piid from response
+            # against property_mapping.
+            did = prop.get("did")
+            if did is not None:
+                did = int(did)
+
+            prop_enum = None
+            # First try direct DID lookup (works for local/MQTT responses)
+            if did is not None:
+                try:
+                    prop_enum = DreameMowerProperty(did)
+                except ValueError:
+                    pass
+
+            # If DID didn't resolve, match by siid+piid (cloud API responses)
+            if prop_enum is None and "siid" in prop and "piid" in prop:
+                siid = prop["siid"]
+                piid = prop["piid"]
+                for p, m in self.property_mapping.items():
+                    if "aiid" not in m and m.get("siid") == siid and m.get("piid") == piid:
+                        prop_enum = p
+                        did = p.value
+                        prop["did"] = str(did)
+                        break
+
+            if prop_enum is None:
+                if prop.get("code") == 0 and "value" in prop:
+                    _LOGGER.debug("Unknown property siid=%s piid=%s did=%s value=%s, skipping",
+                        prop.get("siid"), prop.get("piid"), prop.get("did"), prop["value"])
                 continue
             if prop["code"] == 0 and "value" in prop:
                 value = prop["value"]
