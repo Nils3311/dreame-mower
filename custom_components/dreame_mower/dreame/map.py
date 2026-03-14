@@ -226,9 +226,15 @@ class DreameMapMowerMapManager:
         if self._latest_object_name_time is None or self._latest_object_name_time < request_start_time:
             self._latest_object_name_time = request_start_time
 
+        _LOGGER.warning("FORK MAP: requesting MAP_DATA from cloud (start_time=%s)", self._latest_map_data_time)
         map_data_result = self._protocol.cloud.get_device_property(
             DIID(DreameMowerProperty.MAP_DATA), 20, self._latest_map_data_time
         )
+        try:
+            import json as _json
+            with open("/config/dreame_mower_map_result.json", "w") as f:
+                _json.dump({"map_data_result_type": type(map_data_result).__name__, "map_data_len": len(map_data_result) if map_data_result else 0, "map_data_sample": str(map_data_result)[:500] if map_data_result else None, "latest_map_data_time": self._latest_map_data_time}, f, indent=2, default=str)
+        except: pass
 
         if not self._protocol.cloud.connected:
             if self._connected:
