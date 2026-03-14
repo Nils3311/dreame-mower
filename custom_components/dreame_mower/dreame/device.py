@@ -291,19 +291,25 @@ class DreameMowerDevice:
             device_id,
         )
         if self._protocol.cloud:
-            self._map_manager = DreameMapMowerMapManager(self._protocol)
+            try:
+                self._map_manager = DreameMapMowerMapManager(self._protocol)
+            except Exception as ex:
+                _LOGGER = logging.getLogger(__name__)
+                _LOGGER.error("FORK: Failed to initialize map manager: %s", ex, exc_info=True)
+                self._map_manager = None
 
-            self.listen(self._map_list_changed, DreameMowerProperty.MAP_LIST)
-            self.listen(self._recovery_map_list_changed, DreameMowerProperty.RECOVERY_MAP_LIST)
-            self.listen(self._battery_level_changed, DreameMowerProperty.BATTERY_LEVEL)
-            self.listen(self._map_property_changed, DreameMowerProperty.CUSTOMIZED_CLEANING)
-            self.listen(self._map_property_changed, DreameMowerProperty.STATE)
-            self.listen(
-                self._map_backup_status_changed,
-                DreameMowerProperty.MAP_BACKUP_STATUS,
-            )
-            self._map_manager.listen(self._map_changed, self._property_changed)
-            self._map_manager.listen_error(self._update_failed)
+            if self._map_manager:
+                self.listen(self._map_list_changed, DreameMowerProperty.MAP_LIST)
+                self.listen(self._recovery_map_list_changed, DreameMowerProperty.RECOVERY_MAP_LIST)
+                self.listen(self._battery_level_changed, DreameMowerProperty.BATTERY_LEVEL)
+                self.listen(self._map_property_changed, DreameMowerProperty.CUSTOMIZED_CLEANING)
+                self.listen(self._map_property_changed, DreameMowerProperty.STATE)
+                self.listen(
+                    self._map_backup_status_changed,
+                    DreameMowerProperty.MAP_BACKUP_STATUS,
+                )
+                self._map_manager.listen(self._map_changed, self._property_changed)
+                self._map_manager.listen_error(self._update_failed)
 
     def _connected_callback(self):
         if not self._ready:

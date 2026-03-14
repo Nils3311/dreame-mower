@@ -300,6 +300,9 @@ async def async_setup_entry(
 ) -> None:
     """Set up Dreame Mower Camera based on a config entry."""
     coordinator: DreameMowerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    LOGGER.debug("FORK: camera setup - capability.map=%s, _map_manager=%s",
+                 coordinator.device.capability.map,
+                 coordinator.device._map_manager is not None)
     if coordinator.device.capability.map:
         color_scheme = entry.options.get(CONF_COLOR_SCHEME)
         icon_set = entry.options.get(CONF_ICON_SET)
