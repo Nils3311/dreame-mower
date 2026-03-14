@@ -16,6 +16,7 @@ from .coordinator import DreameMowerDataUpdateCoordinator
 PLATFORMS = (
     Platform.LAWN_MOWER,
     Platform.SENSOR,
+    Platform.BINARY_SENSOR,  # FORK: SENS-04 - connectivity binary sensor
     Platform.SWITCH,
     Platform.BUTTON,
     Platform.NUMBER,
