@@ -480,13 +480,19 @@ class DreameMowerDevice:
             properties = self._default_properties
 
         property_list = []
+        skipped = []
         for prop in properties:
             if prop in self.property_mapping:
                 mapping = self.property_mapping[prop]
                 # Do not include properties that are not exists on the device
                 if "aiid" not in mapping and (not self._ready or prop.value in self.data):
                     property_list.append({"did": str(prop.value), **mapping})
+                else:
+                    skipped.append(prop.name)
 
+        if skipped:
+            _LOGGER.debug("FORK: Skipped properties (not in data yet): %s", skipped)
+        _LOGGER.debug("FORK: Requesting %d properties (ready=%s)", len(property_list), self._ready)
         results = self._protocol.get_properties(property_list)
         return self._handle_properties(results)
 
@@ -530,21 +536,25 @@ class DreameMowerDevice:
 
     def _map_list_changed(self, previous_map_list: Any = None) -> None:
         """Update map list object name on map manager map list property when changed"""
+        _LOGGER.debug("FORK: _map_list_changed called, _map_manager=%s", self._map_manager is not None)
         if self._map_manager:
             map_list = self.get_property(DreameMowerProperty.MAP_LIST)
+            _LOGGER.debug("FORK: MAP_LIST raw value: %s", str(map_list)[:200] if map_list else "None")
             if map_list and map_list != "":
                 try:
                     map_list = json.loads(map_list)
+                    _LOGGER.debug("FORK: MAP_LIST parsed: %s", str(map_list)[:200])
                     object_name = map_list.get("object_name")
                     if object_name is None:
                         object_name = map_list.get("obj_name")
                     if object_name and object_name != "":
-                        _LOGGER.info("Property MAP_LIST Changed: %s", object_name)
+                        _LOGGER.info("FORK: MAP_LIST object_name found: %s", object_name)
                         self._map_manager.set_map_list_object_name(object_name, map_list.get("md5"))
                     else:
+                        _LOGGER.warning("FORK: MAP_LIST has no object_name, keys: %s", list(map_list.keys()) if isinstance(map_list, dict) else type(map_list))
                         self._last_map_list_request = 0
-                except:
-                    pass
+                except Exception as ex:
+                    _LOGGER.error("FORK: MAP_LIST parse error: %s, raw: %s", ex, str(map_list)[:200])
 
     def _recovery_map_list_changed(self, previous_recovery_map_list: Any = None) -> None:
         """Update recovery list object name on map manager recovery list property when changed"""
