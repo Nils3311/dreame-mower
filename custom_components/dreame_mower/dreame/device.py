@@ -508,11 +508,14 @@ class DreameMowerDevice:
 
         if skipped:
             _LOGGER.debug("FORK: Skipped properties (not in data yet): %s", skipped)
-        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s)", len(property_list), self._ready)
+        _LOGGER.warning("FORK DIAG: Requesting %d properties (ready=%s, data_size=%d)", len(property_list), self._ready, len(self.data))
         results = self._protocol.get_properties(property_list)
+        import os
+        diag_file = f"/config/dreame_mower_props_{len(self.data)}.json"
         try:
-            with open("/config/dreame_mower_props.json", "w") as f:
-                json.dump({"request_count": len(property_list), "ready": self._ready, "results": results, "request_sample": property_list[:5]}, f, indent=2, default=str)
+            if not os.path.exists(diag_file):
+                with open(diag_file, "w") as f:
+                    json.dump({"request_count": len(property_list), "ready": self._ready, "data_size": len(self.data), "results_type": type(results).__name__ if results else "None", "results_len": len(results) if results else 0, "results_sample": (results[:3] if isinstance(results, list) else str(results)[:300]) if results else None, "request_sample": property_list[:5]}, f, indent=2, default=str)
         except Exception:
             pass
         return self._handle_properties(results)
